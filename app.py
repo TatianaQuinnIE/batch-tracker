@@ -6,6 +6,8 @@ from flask import Flask
 from batches import service as batches_service
 from batches.routes import bp as batches_bp
 from db import get_connection
+from feedback import service as feedback_service
+from feedback.routes import bp as feedback_bp
 
 DATA_DIR = os.environ.get("DATA_DIR", "./data")
 
@@ -17,8 +19,10 @@ def create_app(data_dir=DATA_DIR):
 
     with closing(get_connection(app.config["DB_PATH"])) as conn:
         batches_service.init_schema(conn)
+        feedback_service.init_schema(conn)
 
     app.register_blueprint(batches_bp)
+    app.register_blueprint(feedback_bp)
 
     @app.get("/")
     def index():
