@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Batch Tracker{% endblock %}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    nav a { margin-right: 1rem; }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+    th, td { border-bottom: 1px solid #ddd; padding: 0.4rem; text-align: left; }
+    form { display: grid; gap: 0.5rem; max-width: 400px; margin: 1rem 0; }
+    .error { color: #b00020; }
+    .expired, .flagged { background: #fde2e2; }
+    .expiring_soon { background: #fff4d6; }
+  </style>
+</head>
+<body>
+  <nav><a href="/">Home</a><a href="/batches/">Batches</a><a href="/feedback/">Feedback</a></nav>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% block content %}{% endblock %}
+</body>
+</html>

@@ -1,7 +1,7 @@
 import os
 from contextlib import closing
 
-from flask import Flask
+from flask import Flask, render_template
 
 from batches import service as batches_service
 from batches.routes import bp as batches_bp
@@ -28,7 +28,7 @@ def create_app(data_dir=DATA_DIR):
 
     @app.get("/")
     def index():
-        return "Batch tracker is running"
+        return render_template("index.html")
 
     return app
 

@@ -1,18 +1,23 @@
 from contextlib import closing
 from datetime import date
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, redirect, render_template, request, url_for
 
 from db import get_connection
 from feedback import service
 
-bp = Blueprint("feedback", __name__, url_prefix="/feedback")
+bp = Blueprint("feedback", __name__, url_prefix="/feedback", template_folder="templates")
+
+
+def _render_page(conn, error=None, status=200):
+    summaries = service.all_summaries(conn)
+    return render_template("feedback.html", summaries=summaries, error=error), status
 
 
 @bp.get("/")
 def list_summaries():
     with closing(get_connection(current_app.config["DB_PATH"])) as conn:
-        return jsonify(service.all_summaries(conn))
+        return _render_page(conn)
 
 
 @bp.get("/flagged")
@@ -32,19 +37,18 @@ def batch_summary(batch_code):
 
 @bp.post("/")
 def submit():
-    data = request.get_json(silent=True) or request.form
-    try:
-        with closing(get_connection(current_app.config["DB_PATH"])) as conn:
+    with closing(get_connection(current_app.config["DB_PATH"])) as conn:
+        try:
             service.submit_feedback(
                 conn,
-                data["batch_code"],
-                int(data["rating"]),
-                str(data.get("had_reaction", "")).lower() in ("1", "true", "yes", "on"),
-                data.get("comment", ""),
+                request.form["batch_code"],
+                int(request.form["rating"]),
+                "had_reaction" in request.form,
+                request.form.get("comment", ""),
                 date.today(),
             )
-    except KeyError as missing:
-        return jsonify(error=f"missing field {missing}"), 400
-    except ValueError as err:
-        return jsonify(error=str(err)), 400
-    return jsonify(status="created"), 201
+        except KeyError as missing:
+            return _render_page(conn, f"missing field {missing}", 400)
+        except ValueError as err:
+            return _render_page(conn, str(err), 400)
+    return redirect(url_for("feedback.list_summaries"))

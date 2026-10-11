@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Batches{% endblock %}
+{% block content %}
+<h1>Batches</h1>
+<table>
+  <tr><th>Code</th><th>Product</th><th>Produced</th><th>Expires</th><th>Qty</th><th>Status</th></tr>
+  {% for b in batches %}
+  <tr class="{{ b.status }}">
+    <td>{{ b.batch_code }}</td><td>{{ b.product }}</td><td>{{ b.produced_on }}</td>
+    <td>{{ b.expires_on }}</td><td>{{ b.quantity }}</td><td>{{ b.status }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<h2>Register a batch</h2>
+<form method="post">
+  <input name="batch_code" placeholder="Batch code, e.g. LAV-2610" required>
+  <input name="product" placeholder="Product" required>
+  <label>Produced on <input type="date" name="produced_on" required></label>
+  <label>Expires on <input type="date" name="expires_on" required></label>
+  <input type="number" name="quantity" min="0" placeholder="Quantity" required>
+  <button>Save batch</button>
+</form>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Feedback{% endblock %}
+{% block content %}
+<h1>Feedback by batch</h1>
+<table>
+  <tr><th>Batch</th><th>Reports</th><th>Reactions</th><th>Reaction rate</th><th>Avg rating</th><th>Flagged</th></tr>
+  {% for s in summaries %}
+  <tr class="{{ 'flagged' if s.flagged }}">
+    <td>{{ s.batch_code }}</td><td>{{ s.reports }}</td><td>{{ s.reactions }}</td>
+    <td>{{ (s.reaction_rate * 100) | round | int }}%</td><td>{{ s.average_rating }}</td>
+    <td>{{ "YES" if s.flagged else "" }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6">No feedback yet.</td></tr>
+  {% endfor %}
+</table>
+<h2>Report feedback</h2>
+<form method="post">
+  <input name="batch_code" placeholder="Batch code from the label" required>
+  <label>Rating (1-5) <input type="number" name="rating" min="1" max="5" required></label>
+  <label><input type="checkbox" name="had_reaction"> I had a skin reaction</label>
+  <textarea name="comment" placeholder="Comment (optional)"></textarea>
+  <button>Send feedback</button>
+</form>
+{% endblock %}
