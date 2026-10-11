@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from datetime import date
 
@@ -58,3 +59,21 @@ def list_batches(conn, today):
 
 def expiring_soon(conn, today):
     return [b for b in list_batches(conn, today) if b["status"] == "expiring_soon"]
+
+
+def seed_if_empty(conn, seed_path):
+    count = conn.execute("SELECT COUNT(*) FROM batches").fetchone()[0]
+    if count > 0:
+        return 0
+    with open(seed_path) as seed_file:
+        seed_batches = json.load(seed_file)
+    for batch in seed_batches:
+        create_batch(
+            conn,
+            batch["batch_code"],
+            batch["product"],
+            date.fromisoformat(batch["produced_on"]),
+            date.fromisoformat(batch["expires_on"]),
+            batch["quantity"],
+        )
+    return len(seed_batches)

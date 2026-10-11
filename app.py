@@ -10,6 +10,7 @@ from feedback import service as feedback_service
 from feedback.routes import bp as feedback_bp
 
 DATA_DIR = os.environ.get("DATA_DIR", "./data")
+SEED_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "seed.json")
 
 
 def create_app(data_dir=DATA_DIR):
@@ -19,6 +20,7 @@ def create_app(data_dir=DATA_DIR):
 
     with closing(get_connection(app.config["DB_PATH"])) as conn:
         batches_service.init_schema(conn)
+        batches_service.seed_if_empty(conn, SEED_PATH)
         feedback_service.init_schema(conn)
 
     app.register_blueprint(batches_bp)

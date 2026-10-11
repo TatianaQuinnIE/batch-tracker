@@ -1,0 +1,6 @@
+[
+  {"batch_code": "LAV-2607", "product": "Lavender soap bar", "produced_on": "2026-07-01", "expires_on": "2027-07-01", "quantity": 120},
+  {"batch_code": "ROS-2608", "product": "Rosehip face oil", "produced_on": "2026-08-15", "expires_on": "2026-11-05", "quantity": 45},
+  {"batch_code": "CAL-2603", "product": "Calendula balm", "produced_on": "2026-03-10", "expires_on": "2026-09-30", "quantity": 8},
+  {"batch_code": "ALO-2609", "product": "Aloe vera gel", "produced_on": "2026-09-20", "expires_on": "2027-03-20", "quantity": 60}
+]
