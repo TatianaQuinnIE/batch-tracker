@@ -42,4 +42,4 @@ def create():
             return _render_page(conn, f"missing field {missing}", 400)
         except ValueError as err:
             return _render_page(conn, str(err), 400)
-    return redirect(url_for("batches.list_all"))
+    return redirect(url_for("batches.list_all", saved=request.form["batch_code"].strip().upper()))

@@ -1,23 +1,101 @@
 {% extends "base.html" %}
 {% block title %}Batches{% endblock %}
+{% set labels = {"ok": "In date", "expiring_soon": "Expiring soon", "expired": "Expired"} %}
+{% set n_expired = batches | selectattr("status", "equalto", "expired") | list | length %}
+{% set n_soon = batches | selectattr("status", "equalto", "expiring_soon") | list | length %}
+{% set n_ok = batches | selectattr("status", "equalto", "ok") | list | length %}
+{% set f = request.form if error else {} %}
+{% macro nice(d) %}{% set m = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] %}{{ d[8:10] | int }} {{ m[d[5:7] | int] }} {{ d[0:4] }}{% endmacro %}
 {% block content %}
-<h1>Batches</h1>
-<table>
-  <tr><th>Code</th><th>Product</th><th>Produced</th><th>Expires</th><th>Qty</th><th>Status</th></tr>
+<style>
+  .top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 32px; align-items: end; margin-bottom: 36px; }
+  .top .lead { margin-bottom: 0; }
+  .stones { display: grid; grid-template-columns: repeat(3, 132px); gap: 12px; }
+  .stone { padding: 16px 18px 14px; border-radius: 20px; }
+  .stone b { display: block; font-family: var(--serif); font-size: 52px; line-height: 1; font-weight: 600; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+  .stone span { display: block; margin-top: 6px; font-size: 13px; font-weight: 700; }
+  .stone.bad { background: var(--terra); color: #fff4ee; }
+  .stone.warn { background: var(--saffron-soft); color: #7a4f00; }
+  .stone.good { background: var(--sage-soft); color: var(--forest); }
+  @media (max-width: 860px) { .top { grid-template-columns: minmax(0, 1fr); } .stones { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+  .newbatch { padding: 22px 24px 24px; margin-bottom: 28px; }
+  .newbatch h2 { font-size: 22px; margin: 0 0 14px; }
+  .newbatch form { display: grid; grid-template-columns: 1fr 1.6fr 1fr 1fr 0.7fr auto; gap: 12px; align-items: end; }
+  @media (max-width: 960px) { .newbatch form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .newbatch button { grid-column: 1 / -1; } }
+
+  .ledger { padding: 8px; }
+  .ledger h2 { font-size: 22px; margin: 14px 16px 10px; }
+  .row {
+    display: grid; grid-template-columns: 48px minmax(0, 1.6fr) minmax(0, 1.4fr) 140px; gap: 18px; align-items: center;
+    padding: 14px 16px; border-radius: 16px; transition: background-color 140ms ease;
+  }
+  .row { position: relative; }
+  .row + .row::before { content: ""; position: absolute; left: 16px; right: 16px; top: 0; height: 1px; background: var(--line); transition: opacity 140ms ease; }
+  @media (hover: hover) and (pointer: fine) { .row:hover { background: #f8f2e6; } .row:hover::before, .row:hover + .row::before { opacity: 0; } }
+  .mono {
+    display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px;
+    font-family: var(--serif); font-size: 22px; font-weight: 600; color: var(--forest); background: var(--sage-soft);
+  }
+  .row.expired .mono { background: var(--terra-soft); color: #9c3d1d; }
+  .row.expiring_soon .mono { background: var(--saffron-soft); color: #7a4f00; }
+  .what strong { display: block; font-family: var(--serif); font-size: 19px; font-weight: 600; color: var(--forest); letter-spacing: -0.01em; line-height: 1.25; }
+  .what small { display: flex; align-items: center; gap: 10px; margin-top: 5px; color: var(--muted); font-size: 13px; }
+  .when span, .when b { white-space: nowrap; }
+  .when { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .when b { color: var(--ink); font-weight: 600; }
+  .when .arrow { color: #c0bba9; }
+  .row .pill { justify-self: end; }
+  @media (max-width: 760px) {
+    .row { grid-template-columns: 44px minmax(0, 1fr); gap: 6px 14px; }
+    .mono { width: 44px; height: 44px; grid-row: span 3; align-self: start; }
+    .when, .row .pill { grid-column: 2; justify-self: start; }
+  }
+</style>
+
+<div class="top">
+  <div>
+    <p class="eyebrow">Production ledger</p>
+    <h1>Every batch, <em>accounted for.</em></h1>
+    <p class="lead">Soonest expiry first, so nothing slips past its date on the shelf.</p>
+  </div>
+  <div class="stones" aria-label="Batch summary">
+    <div class="stone bad"><b>{{ n_expired }}</b><span>Expired</span></div>
+    <div class="stone warn"><b>{{ n_soon }}</b><span>Expiring in 30 days</span></div>
+    <div class="stone good"><b>{{ n_ok }}</b><span>In date</span></div>
+  </div>
+</div>
+
+{% if request.args.get("saved") and not error %}
+<p class="notice ok" role="status">Batch {{ request.args.get("saved") }} added to the ledger.</p>
+{% endif %}
+
+<section class="card newbatch">
+  <h2>Register a new batch</h2>
+  <form method="post">
+    <label>Batch code <input name="batch_code" placeholder="LAV-2610" value="{{ f.get('batch_code', '') }}" required></label>
+    <label>Product <input name="product" placeholder="Lavender soap bar" value="{{ f.get('product', '') }}" required></label>
+    <label>Made on <input type="date" name="produced_on" value="{{ f.get('produced_on', '') }}" required></label>
+    <label>Expires on <input type="date" name="expires_on" value="{{ f.get('expires_on', '') }}" required></label>
+    <label>Units <input type="number" name="quantity" min="0" placeholder="0" value="{{ f.get('quantity', '') }}" required></label>
+    <button>Add batch</button>
+  </form>
+</section>
+
+<section class="card ledger">
+  <h2>On the shelf</h2>
   {% for b in batches %}
-  <tr class="{{ b.status }}">
-    <td>{{ b.batch_code }}</td><td>{{ b.product }}</td><td>{{ b.produced_on }}</td>
-    <td>{{ b.expires_on }}</td><td>{{ b.quantity }}</td><td>{{ b.status }}</td>
-  </tr>
+  <div class="row {{ b.status }}">
+    <div class="mono" aria-hidden="true">{{ b.product[:1] | upper }}</div>
+    <div class="what">
+      <strong>{{ b.product }}</strong>
+      <small><span class="tag">{{ b.batch_code }}</span>{{ b.quantity }} units</small>
+    </div>
+    <div class="when"><span>Made {{ nice(b.produced_on) }}</span><span class="arrow">→</span><b>{{ nice(b.expires_on) }}</b></div>
+    <span class="pill {{ b.status }}">{{ labels[b.status] }}</span>
+  </div>
+  {% else %}
+  <p class="empty">The shelf is empty. Register your first batch above.</p>
   {% endfor %}
-</table>
-<h2>Register a batch</h2>
-<form method="post">
-  <input name="batch_code" placeholder="Batch code, e.g. LAV-2610" required>
-  <input name="product" placeholder="Product" required>
-  <label>Produced on <input type="date" name="produced_on" required></label>
-  <label>Expires on <input type="date" name="expires_on" required></label>
-  <input type="number" name="quantity" min="0" placeholder="Quantity" required>
-  <button>Save batch</button>
-</form>
+</section>
 {% endblock %}

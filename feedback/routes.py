@@ -43,7 +43,7 @@ def submit():
                 conn,
                 request.form["batch_code"],
                 int(request.form["rating"]),
-                "had_reaction" in request.form,
+                request.form.get("had_reaction") == "on",
                 request.form.get("comment", ""),
                 date.today(),
             )
@@ -51,4 +51,4 @@ def submit():
             return _render_page(conn, f"missing field {missing}", 400)
         except ValueError as err:
             return _render_page(conn, str(err), 400)
-    return redirect(url_for("feedback.list_summaries"))
+    return redirect(url_for("feedback.list_summaries", sent=request.form["batch_code"].strip().upper()))

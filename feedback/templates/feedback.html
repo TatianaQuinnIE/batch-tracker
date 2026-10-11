@@ -1,25 +1,158 @@
 {% extends "base.html" %}
 {% block title %}Feedback{% endblock %}
+{% set flagged = summaries | selectattr("flagged") | list %}
+{% set f = request.form if error else {} %}
 {% block content %}
-<h1>Feedback by batch</h1>
-<table>
-  <tr><th>Batch</th><th>Reports</th><th>Reactions</th><th>Reaction rate</th><th>Avg rating</th><th>Flagged</th></tr>
-  {% for s in summaries %}
-  <tr class="{{ 'flagged' if s.flagged }}">
-    <td>{{ s.batch_code }}</td><td>{{ s.reports }}</td><td>{{ s.reactions }}</td>
-    <td>{{ (s.reaction_rate * 100) | round | int }}%</td><td>{{ s.average_rating }}</td>
-    <td>{{ "YES" if s.flagged else "" }}</td>
-  </tr>
-  {% else %}
-  <tr><td colspan="6">No feedback yet.</td></tr>
+<style>
+  .hero { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); overflow: hidden; margin-bottom: 64px; }
+  .hero-side {
+    position: relative; padding: 44px 40px; color: var(--cream);
+    background:
+      radial-gradient(26rem 18rem at 110% 110%, rgba(196, 85, 47, 0.55), transparent 70%),
+      radial-gradient(20rem 16rem at -10% -10%, rgba(92, 138, 104, 0.6), transparent 70%),
+      var(--forest);
+  }
+  .hero-side .eyebrow { color: var(--blush); }
+  .hero-side h1 { color: var(--cream); font-size: clamp(2.4rem, 4.6vw, 3.6rem); }
+  .hero-side h1 em { color: var(--blush); }
+  .hero-side p { color: rgba(247, 241, 228, 0.78); font-size: 16px; max-width: 34ch; margin: 0; }
+  .hero-side ol { list-style: none; padding: 0; margin: 28px 0 0; display: grid; gap: 10px; counter-reset: s; }
+  .hero-side li { display: flex; gap: 12px; align-items: center; color: rgba(247, 241, 228, 0.9); font-size: 14px; }
+  .hero-side li::before { counter-increment: s; content: counter(s); display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: rgba(247, 241, 228, 0.14); font-weight: 700; font-size: 12px; }
+  .leaf { position: absolute; right: -18px; bottom: -22px; width: 170px; opacity: 0.22; pointer-events: none; }
+  .hero-form { padding: 40px; }
+  .hero-form form { display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr); }
+  .hero-form .notice { margin-bottom: 20px; }
+  @media (max-width: 860px) { .hero { grid-template-columns: minmax(0, 1fr); } .hero-side, .hero-form { padding: 30px 22px; } .leaf { width: 120px; } }
+
+  .stars { display: flex; gap: 4px; }
+  .stars input { position: absolute; opacity: 0; pointer-events: none; }
+  .stars span { display: block; font-size: 36px; line-height: 1; color: #e5dcc8; cursor: pointer; transition: color 120ms ease; }
+  .stars:has(input:checked) span { color: var(--gold); }
+  .stars label:has(input:checked) ~ label span { color: #e5dcc8; }
+  .stars input:checked + span { animation: pop 340ms var(--ease-out); }
+  @keyframes pop { 0% { transform: scale(1); } 45% { transform: scale(1.28); } 100% { transform: scale(1); } }
+  @media (hover: hover) and (pointer: fine) {
+    .field .stars:hover label span { color: var(--gold); }
+    .field .stars:hover label:hover ~ label span { color: #e5dcc8; }
+  }
+  .stars input:focus-visible + span { outline: 2px solid var(--forest); outline-offset: 3px; border-radius: 6px; }
+
+  /* Sliding Yes/No switch */
+  .seg { position: relative; display: grid; grid-template-columns: 1fr 1fr; padding: 4px; border-radius: 999px; background: #f4eee1; }
+  .seg::before {
+    content: ""; position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px); border-radius: 999px;
+    background: var(--forest); box-shadow: 0 6px 14px -6px rgba(29, 58, 44, 0.6);
+    transition: transform 300ms var(--ease-out), background-color 200ms ease;
+  }
+  .seg:has(input[value="on"]:checked)::before { transform: translateX(100%); background: var(--terra); box-shadow: 0 6px 14px -6px rgba(196, 85, 47, 0.7); }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg span { position: relative; z-index: 1; display: grid; place-items: center; height: 42px; border-radius: 999px; font-size: 14px; font-weight: 700; color: var(--forest); cursor: pointer; transition: color 200ms ease; }
+  .seg input:checked + span { color: #fff; }
+  .seg input:focus-visible + span { outline: 2px solid var(--forest); outline-offset: 2px; }
+  .hero-form button { width: 100%; height: 52px; font-size: 16px; }
+
+  .staff-head { display: flex; justify-content: space-between; align-items: end; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  .staff-head h2 { font-size: clamp(1.8rem, 3.4vw, 2.6rem); margin: 0; }
+  .alerts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin-bottom: 20px; }
+  .alert { padding: 22px; border-radius: 22px; background: var(--terra); color: #fff4ee; box-shadow: 0 18px 40px -16px rgba(196, 85, 47, 0.7); }
+  .alert .tag { background: transparent; color: #fff4ee; border-color: rgba(255, 244, 238, 0.7); }
+  .alert b { display: block; font-family: var(--serif); font-size: 56px; line-height: 1; font-weight: 600; letter-spacing: -0.03em; margin: 16px 0 4px; }
+  .alert p { margin: 0; font-size: 14px; color: rgba(255, 244, 238, 0.88); }
+  .alert p strong { color: #fff; }
+  .clear { padding: 20px 22px; border-radius: 22px; background: var(--sage-soft); color: var(--forest); font-family: var(--serif); font-size: 19px; margin-bottom: 20px; }
+
+  .list { padding: 8px; }
+  .item { display: grid; grid-template-columns: 120px minmax(0, 1fr) 160px 110px 96px; gap: 18px; align-items: center; padding: 14px 16px; border-radius: 16px; transition: background-color 140ms ease; }
+  .item { position: relative; }
+  .item + .item::before { content: ""; position: absolute; left: 16px; right: 16px; top: 0; height: 1px; background: var(--line); transition: opacity 140ms ease; }
+  @media (hover: hover) and (pointer: fine) { .item:hover { background: #f8f2e6; } .item:hover::before, .item:hover + .item::before { opacity: 0; } }
+  .item .reports { color: var(--muted); font-size: 14px; }
+  .item .reports b { color: var(--ink); }
+  .meter { display: flex; align-items: center; gap: 10px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .meter i { flex: 1; height: 8px; border-radius: 4px; background: #efe7d6; overflow: hidden; }
+  .meter i b { display: block; height: 100%; border-radius: 4px; background: var(--sage); }
+  .meter.bad { color: var(--terra); }
+  .meter.bad i b { background: var(--terra); }
+  .meter em { font-style: normal; min-width: 4ch; text-align: right; }
+  .mini { color: var(--gold); letter-spacing: 1px; font-size: 14px; white-space: nowrap; }
+  .mini .off { color: #e5dcc8; }
+  .item .pill { justify-self: end; }
+  @media (max-width: 760px) {
+    .item { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; }
+    .item .meter { grid-column: 1 / -1; }
+  }
+</style>
+
+<section class="card hero">
+  <div class="hero-side">
+    <p class="eyebrow">Customer care</p>
+    <h1>Had a reaction? <em>Tell us.</em></h1>
+    <p>Every report goes straight to the people who made your product.</p>
+    <ol>
+      <li>Find the batch code on your label</li>
+      <li>Rate it and tell us how your skin felt</li>
+      <li>We check the whole batch</li>
+    </ol>
+    <svg class="leaf" viewBox="0 0 120 120" aria-hidden="true"><path d="M60 112C60 70 72 34 112 8c-6 46-22 82-52 104z" fill="#f7f1e4"/><path d="M60 112C58 80 44 56 12 40c2 36 18 60 48 72z" fill="#f3cdbd"/></svg>
+  </div>
+  <div class="hero-form">
+    {% if request.args.get("sent") and not error %}
+    <p class="notice ok" role="status">Thank you. Your report for {{ request.args.get("sent") }} was recorded.</p>
+    {% endif %}
+    <form method="post">
+      <label>Batch code <input name="batch_code" placeholder="e.g. ROS-2608" value="{{ f.get('batch_code', '') }}" required></label>
+      <div class="field">How did you like it?
+        <div class="stars">
+          {% for n in range(1, 6) %}<label><input type="radio" name="rating" value="{{ n }}" required aria-label="{{ n }} out of 5" {% if f.get('rating') == n | string %}checked{% endif %}><span>★</span></label>{% endfor %}
+        </div>
+      </div>
+      <div class="field">Any skin reaction?
+        <div class="seg">
+          <label><input type="radio" name="had_reaction" value="" {% if f.get('had_reaction') != 'on' %}checked{% endif %}><span>No, all good</span></label>
+          <label><input type="radio" name="had_reaction" value="on" {% if f.get('had_reaction') == 'on' %}checked{% endif %}><span>Yes, I reacted</span></label>
+        </div>
+      </div>
+      <label>Anything else? <textarea name="comment" placeholder="What happened, where on the skin, how long after">{{ f.get('comment', '') }}</textarea></label>
+      <button>Send feedback</button>
+    </form>
+  </div>
+</section>
+
+<div class="staff-head">
+  <div>
+    <p class="eyebrow">For workshop staff</p>
+    <h2>How each batch is landing</h2>
+  </div>
+  <p class="dim" style="margin:0">Flagged at 3+ reports with over 10% reactions</p>
+</div>
+
+{% if flagged %}
+<div class="alerts">
+  {% for s in flagged %}
+  <div class="alert">
+    <span class="tag">{{ s.batch_code }}</span>
+    <b>{{ (s.reaction_rate * 100) | round | int }}%</b>
+    <p><strong>reported a reaction</strong> · {{ s.reactions }} of {{ s.reports }} customers · avg {{ s.average_rating }}/5. Consider withdrawing this batch.</p>
+  </div>
   {% endfor %}
-</table>
-<h2>Report feedback</h2>
-<form method="post">
-  <input name="batch_code" placeholder="Batch code from the label" required>
-  <label>Rating (1-5) <input type="number" name="rating" min="1" max="5" required></label>
-  <label><input type="checkbox" name="had_reaction"> I had a skin reaction</label>
-  <textarea name="comment" placeholder="Comment (optional)"></textarea>
-  <button>Send feedback</button>
-</form>
+</div>
+{% elif summaries %}
+<p class="clear">All clear. No batch is causing concern right now.</p>
+{% endif %}
+
+<section class="card list">
+  {% for s in summaries %}
+  {% set pct = (s.reaction_rate * 100) | round | int %}
+  <div class="item">
+    <span><span class="tag">{{ s.batch_code }}</span></span>
+    <span class="reports"><b>{{ s.reports }}</b> report{{ '' if s.reports == 1 else 's' }}, <b>{{ s.reactions }}</b> reaction{{ '' if s.reactions == 1 else 's' }}</span>
+    <span class="meter {{ 'bad' if s.flagged }}"><i><b style="width: {{ pct }}%"></b></i><em>{{ pct }}%</em></span>
+    <span class="mini" aria-label="Average {{ s.average_rating }} out of 5">{% for n in range(1, 6) %}<span class="{{ '' if n <= s.average_rating | round | int else 'off' }}">★</span>{% endfor %}</span>
+    {% if s.flagged %}<span class="pill flagged">Flagged</span>{% else %}<span class="pill ok">OK</span>{% endif %}
+  </div>
+  {% else %}
+  <p class="empty">No feedback yet.</p>
+  {% endfor %}
+</section>
 {% endblock %}

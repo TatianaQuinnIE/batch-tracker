@@ -1,9 +1,50 @@
 {% extends "base.html" %}
+{% block title %}Home{% endblock %}
 {% block content %}
-<h1>Batch Tracker</h1>
-<p>Production batches and customer reaction reports for the workshop.</p>
-<ul>
-  <li><a href="/batches/">Batches</a>: register batches and see what is expiring</li>
-  <li><a href="/feedback/">Feedback</a>: report a reaction and see flagged batches</li>
-</ul>
+<style>
+  .intro { max-width: 760px; margin: 24px 0 48px; }
+  .intro h1 { font-size: clamp(3rem, 8vw, 5.6rem); }
+  .doors { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+  .door {
+    position: relative; display: flex; flex-direction: column; justify-content: space-between; min-height: 260px;
+    padding: 30px; border-radius: 26px; text-decoration: none; overflow: hidden;
+    transition: transform 160ms var(--ease-out), box-shadow 200ms ease;
+  }
+  .door:active { transform: scale(0.985); }
+  @media (hover: hover) and (pointer: fine) { .door:hover { transform: translateY(-3px); box-shadow: 0 28px 50px -20px rgba(29, 58, 44, 0.45); } }
+  .door h2 { font-size: 40px; margin: 0 0 10px; color: inherit; }
+  .door p { margin: 0; max-width: 32ch; font-size: 16px; opacity: 0.85; }
+  .door .go { display: inline-flex; align-items: center; gap: 8px; margin-top: 28px; font-weight: 700; }
+  .door .go i { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; font-style: normal; transition: transform 200ms var(--ease-out); }
+  @media (hover: hover) and (pointer: fine) { .door:hover .go i { transform: translateX(4px); } }
+  .door.batches { background: var(--forest); color: var(--cream); }
+  .door.batches .go i { background: var(--cream); color: var(--forest); }
+  .door.feedback { background: var(--blush); color: #5a2410; }
+  .door.feedback .go i { background: var(--terra); color: #fff; }
+  .door svg { position: absolute; right: -10px; bottom: -14px; width: 150px; opacity: 0.25; pointer-events: none; }
+  @media (prefers-reduced-motion: reduce) { .door, .door .go i { transition: none; } }
+</style>
+<div class="intro">
+  <p class="eyebrow">The workshop ledger</p>
+  <h1>Made by hand. <em>Tracked with care.</em></h1>
+  <p class="lead">Every soap, oil and balm leaves the workshop with a batch code. Know what is about to expire, and hear the moment a customer reacts.</p>
+</div>
+<div class="doors">
+  <a class="door batches" href="/batches/">
+    <div>
+      <h2>Batches</h2>
+      <p>Register production runs and see what is expired or expiring in the next 30 days.</p>
+    </div>
+    <span class="go"><i>→</i>Open the ledger</span>
+    <svg viewBox="0 0 120 120" aria-hidden="true"><rect x="22" y="30" width="76" height="70" rx="12" fill="#f7f1e4"/><rect x="34" y="18" width="52" height="16" rx="5" fill="#f7f1e4"/></svg>
+  </a>
+  <a class="door feedback" href="/feedback/">
+    <div>
+      <h2>Feedback</h2>
+      <p>Customers report reactions by batch code. Batches with too many reactions are flagged.</p>
+    </div>
+    <span class="go"><i>→</i>Open feedback</span>
+    <svg viewBox="0 0 120 120" aria-hidden="true"><path d="M60 112C60 70 72 34 112 8c-6 46-22 82-52 104z" fill="#c4552f"/><path d="M60 112C58 80 44 56 12 40c2 36 18 60 48 72z" fill="#c4552f"/></svg>
+  </a>
+</div>
 {% endblock %}

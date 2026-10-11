@@ -3,21 +3,163 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Batch Tracker{% endblock %}</title>
+  <title>{% block title %}Batch Tracker{% endblock %} · Batch Tracker</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; color: #222; }
-    nav a { margin-right: 1rem; }
-    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
-    th, td { border-bottom: 1px solid #ddd; padding: 0.4rem; text-align: left; }
-    form { display: grid; gap: 0.5rem; max-width: 400px; margin: 1rem 0; }
-    .error { color: #b00020; }
-    .expired, .flagged { background: #fde2e2; }
-    .expiring_soon { background: #fff4d6; }
+    :root {
+      --cream: #f7f1e4;
+      --card: #fffdf7;
+      --forest: #1d3a2c;
+      --forest-2: #2c5440;
+      --ink: #1f2b24;
+      --muted: #6f756b;
+      --line: rgba(29, 58, 44, 0.12);
+      --sage: #5c8a68;
+      --sage-soft: #dfeadf;
+      --terra: #c4552f;
+      --terra-soft: #f8ddd1;
+      --saffron: #d99a1e;
+      --saffron-soft: #f8e7bf;
+      --blush: #f3cdbd;
+      --gold: #e0a526;
+      --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+      --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+      --shadow-sm: 0 1px 2px rgba(29, 58, 44, 0.06), 0 2px 8px rgba(29, 58, 44, 0.05);
+      --shadow-lg: 0 2px 4px rgba(29, 58, 44, 0.05), 0 18px 40px -12px rgba(29, 58, 44, 0.18);
+    }
+    * { box-sizing: border-box; }
+    ::selection { background: var(--blush); color: var(--ink); }
+    html { background: var(--cream); }
+    body {
+      margin: 0; min-height: 100vh; color: var(--ink);
+      font: 15px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      background:
+        radial-gradient(42rem 28rem at 92% -6%, rgba(243, 205, 189, 0.75), transparent 70%),
+        radial-gradient(36rem 26rem at -8% 12%, rgba(92, 138, 104, 0.22), transparent 70%),
+        radial-gradient(40rem 30rem at 70% 110%, rgba(224, 165, 38, 0.16), transparent 70%),
+        var(--cream);
+      background-attachment: fixed;
+    }
+    a:focus-visible, button:focus-visible { outline: 2px solid var(--forest); outline-offset: 3px; border-radius: 8px; }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+    /* Translucent header: content scrolls underneath */
+    header {
+      position: sticky; top: 0; z-index: 10;
+      background: rgba(247, 241, 228, 0.72);
+      backdrop-filter: blur(18px) saturate(170%); -webkit-backdrop-filter: blur(18px) saturate(170%);
+      box-shadow: 0 1px 0 var(--line);
+    }
+    header .wrap { display: flex; align-items: center; justify-content: space-between; height: 68px; gap: 12px; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; font-family: var(--serif); font-size: 22px; font-weight: 600; color: var(--forest); text-decoration: none; letter-spacing: -0.01em; }
+    .brand svg { width: 30px; height: 30px; }
+    nav { display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(29, 58, 44, 0.06); }
+    nav a {
+      padding: 7px 16px; border-radius: 999px; color: var(--forest); text-decoration: none; font-weight: 600; font-size: 14px;
+      transition: background-color 160ms ease, color 160ms ease, transform 120ms var(--ease-out);
+    }
+    nav a:active { transform: scale(0.96); }
+    nav a[aria-current="page"] { background: var(--forest); color: var(--cream); box-shadow: var(--shadow-sm); }
+    @media (hover: hover) and (pointer: fine) { nav a:not([aria-current="page"]):hover { background: rgba(29, 58, 44, 0.08); } }
+
+    main.wrap { padding-top: 44px; padding-bottom: 96px; }
+    .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--terra); margin: 0 0 10px; }
+    .eyebrow::before { content: ""; width: 18px; height: 2px; border-radius: 2px; background: currentColor; }
+    h1 {
+      font-family: var(--serif); font-weight: 600; color: var(--forest);
+      font-size: clamp(2.6rem, 6vw, 4.4rem); line-height: 1.02; letter-spacing: -0.03em; margin: 0 0 12px;
+    }
+    h1 em { font-style: italic; font-weight: 500; color: var(--terra); }
+    h2 { font-family: var(--serif); font-weight: 600; color: var(--forest); letter-spacing: -0.02em; line-height: 1.1; }
+    .lead { color: var(--muted); font-size: 17px; margin: 0 0 32px; max-width: 58ch; }
+    .card { background: var(--card); border-radius: 22px; box-shadow: var(--shadow-lg); border: 1px solid rgba(255, 255, 255, 0.7); }
+
+    /* Notices materialise (blur + scale + fade) */
+    .notice {
+      display: flex; align-items: center; gap: 12px; border-radius: 14px; padding: 12px 16px; margin: 0 0 24px; font-weight: 600;
+      transition: opacity 260ms var(--ease-out), transform 260ms var(--ease-out), filter 260ms var(--ease-out);
+      @starting-style { opacity: 0; transform: translateY(-8px) scale(0.98); filter: blur(4px); }
+    }
+    .notice::before { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font-size: 13px; font-weight: 800; color: #fff; }
+    .notice.ok { background: var(--sage-soft); color: var(--forest-2); }
+    .notice.ok::before { content: "✓"; background: var(--sage); }
+    .notice.error { background: var(--terra-soft); color: #9c3d1d; }
+    .notice.error::before { content: "!"; background: var(--terra); }
+
+    /* Forms */
+    label, .field { display: grid; gap: 7px; font-size: 13px; font-weight: 600; color: var(--forest); min-width: 0; }
+    input, textarea {
+      font: inherit; font-size: 15px; font-weight: 400; color: var(--ink); width: 100%; min-width: 0;
+      padding: 0 14px; border: 1.5px solid transparent; border-radius: 12px; background: #f4eee1;
+      transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+    }
+    input { height: 46px; }
+    textarea { padding: 12px 14px; line-height: 1.45; resize: vertical; min-height: 84px; }
+    input::placeholder, textarea::placeholder { color: #a4a293; }
+    input:focus, textarea:focus { outline: none; background: #fff; border-color: var(--forest-2); box-shadow: 0 0 0 4px rgba(44, 84, 64, 0.12); }
+    button {
+      font: inherit; font-weight: 700; font-size: 15px; color: var(--cream); background: var(--forest);
+      border: 0; border-radius: 999px; height: 46px; padding: 0 24px; cursor: pointer; white-space: nowrap;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.15) inset, 0 8px 20px -8px rgba(29, 58, 44, 0.55);
+      transition: transform 120ms var(--ease-out), background-color 160ms ease, box-shadow 160ms ease;
+    }
+    button:active { transform: scale(0.97); }
+    @media (hover: hover) and (pointer: fine) { button:hover { background: var(--forest-2); } }
+
+    /* Shared bits */
+    .tag {
+      display: inline-block; white-space: nowrap; font: 700 12px/1 var(--mono); letter-spacing: 0.06em; color: var(--forest);
+      padding: 6px 9px; border-radius: 7px; background: #fff; border: 1.5px solid var(--forest);
+    }
+    .pill { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px 5px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+    .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .pill.ok { background: var(--sage-soft); color: var(--forest-2); }
+    .pill.expiring_soon { background: var(--saffron-soft); color: #8a5b00; }
+    .pill.expired, .pill.flagged { background: var(--terra-soft); color: #9c3d1d; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .dim { color: var(--muted); }
+    .empty { text-align: center; color: var(--muted); padding: 48px 16px; font-family: var(--serif); font-style: italic; font-size: 18px; }
+
+    @media (max-width: 640px) {
+      header .wrap { height: 60px; }
+      .brand span { display: none; }
+      main.wrap { padding-top: 32px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before { transition-duration: 0ms !important; animation: none !important; }
+      .notice { transition: opacity 200ms ease !important; @starting-style { opacity: 0; transform: none; filter: none; } }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      header { background: var(--cream); backdrop-filter: none; -webkit-backdrop-filter: none; }
+    }
+    @media (prefers-contrast: more) {
+      .card { border: 1.5px solid var(--forest); box-shadow: none; }
+      input, textarea { border-color: var(--forest); }
+    }
   </style>
 </head>
 <body>
-  <nav><a href="/">Home</a><a href="/batches/">Batches</a><a href="/feedback/">Feedback</a></nav>
-  {% if error %}<p class="error">{{ error }}</p>{% endif %}
-  {% block content %}{% endblock %}
+  <header>
+    <div class="wrap">
+      <a class="brand" href="/" aria-label="Batch Tracker home">
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <circle cx="16" cy="16" r="15" fill="#1d3a2c"/>
+          <path d="M16 24c0-6 2-10 7-13-1 6-3 10-7 13z" fill="#5c8a68"/>
+          <path d="M16 24c0-5-2-8-6-10 0 5 2 8 6 10z" fill="#f3cdbd"/>
+          <circle cx="16" cy="24.5" r="1.6" fill="#e0a526"/>
+        </svg>
+        <span>Batch Tracker</span>
+      </a>
+      <nav>
+        <a href="/batches/" {% if request.path.startswith('/batches') %}aria-current="page"{% endif %}>Batches</a>
+        <a href="/feedback/" {% if request.path.startswith('/feedback') %}aria-current="page"{% endif %}>Feedback</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">
+    {% if error %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
 </body>
 </html>
