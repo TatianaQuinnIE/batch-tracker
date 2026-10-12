@@ -31,3 +31,11 @@ Context: The brief asks for at least 70% coverage on the core logic of both doma
 Decision: Unit tests call batches/service.py and feedback/service.py directly against an in-memory SQLite database (the conn fixture) with a fixed date, so boundary cases are exact. Route tests then use Flask's test client with a temporary DATA_DIR to check redirects, validation errors, kept form values and the JSON endpoints. Coverage is measured on the batches and feedback packages (command in README).
 Alternatives considered: Only end-to-end route tests, rejected because boundary values are harder to hit precisely and a failure does not point to the function that broke. Browser tests (Selenium/Playwright), rejected because they add heavy dependencies and are slow for an app with no JavaScript.
 Consequences: Service logic is fully covered and the tests can move with each service in Assignment 2 unchanged. Left thinner on purpose: templates are only checked for key text, not layout, so a visual regression would not fail the suite; container behaviour is checked by run.sh instead of pytest.
+
+## 5. No login for workshop staff in this version
+Date: 2026-10-12
+Status: Decided
+Context: Customers must be able to report a reaction without creating an account, but the "Workshop view" and the Batches page are meant for the two workshop staff. The app runs locally for one workshop in Assignment 1.
+Decision: I deliberately did not build authentication. Every page is open to anyone who can reach the app.
+Alternatives considered: Flask-Login with a staff account, rejected for now because it adds a dependency, password hashing, a SECRET_KEY setting and session tests, roughly doubling the scope for a feature nobody needs while the app runs on a laptop. Hiding the staff pages behind a secret URL, rejected because it is security by obscurity.
+Consequences: Batch and reaction data is visible to anyone on the network, so this must be fixed before any public deployment. The Assignment 2 split makes it easier: the batches service can sit behind staff-only access while the feedback form stays public.
