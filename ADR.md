@@ -23,3 +23,11 @@ Context: Customers only know the code printed on the label, and in Assignment 2 
 Decision: One SQLite file (DATA_DIR/tracker.db) with two tables owned by different domains: batches (batch_code UNIQUE) and feedback (batch_code TEXT, indexed, no foreign key). Codes are stored upper-case and dates as ISO text (YYYY-MM-DD).
 Alternatives considered: feedback.batch_id INTEGER REFERENCES batches(id). Rejected because customers do not know internal ids, and a foreign key cannot cross two databases once the services are split.
 Consequences: The database does not stop feedback for a code that does not exist (it could arrive before the batch is registered); an index on feedback.batch_code keeps the per-batch GROUP BY fast. Splitting later means moving one table, not untangling a relationship.
+
+## 4. Test the service logic directly, then the routes through Flask's test client
+Date: 2026-10-12
+Status: Decided
+Context: The brief asks for at least 70% coverage on the core logic of both domains. The bugs that would actually hurt the workshop are at the boundaries: a batch exactly 30 days from expiry, a batch at exactly 10% reactions, fewer than 3 reports, seed data loading twice, and the "No, all good" answer being counted as a reaction.
+Decision: Unit tests call batches/service.py and feedback/service.py directly against an in-memory SQLite database (the conn fixture) with a fixed date, so boundary cases are exact. Route tests then use Flask's test client with a temporary DATA_DIR to check redirects, validation errors, kept form values and the JSON endpoints. Coverage is measured on the batches and feedback packages (command in README).
+Alternatives considered: Only end-to-end route tests, rejected because boundary values are harder to hit precisely and a failure does not point to the function that broke. Browser tests (Selenium/Playwright), rejected because they add heavy dependencies and are slow for an app with no JavaScript.
+Consequences: Service logic is fully covered and the tests can move with each service in Assignment 2 unchanged. Left thinner on purpose: templates are only checked for key text, not layout, so a visual regression would not fail the suite; container behaviour is checked by run.sh instead of pytest.
