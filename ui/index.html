@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Batch Tracker</title>
+  <style>
+    body { font-family: Georgia, serif; background: #f7f1e4; color: #1f2b24; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }
+    li { margin: .4rem 0; }
+    code { font-family: ui-monospace, Menlo, monospace; }
+  </style>
+</head>
+<body>
+  <h1>Batch Tracker</h1>
+  <p>Static UI. The pages from Assignment 1 are being ported here; for now it shows whether each service answers.</p>
+  <ul id="status"></ul>
+  <script src="config.js"></script>
+  <script>
+    const services = { batches: APP_CONFIG.BATCHES_URL, feedback: APP_CONFIG.FEEDBACK_URL };
+    const list = document.getElementById("status");
+    for (const [name, url] of Object.entries(services)) {
+      const item = document.createElement("li");
+      item.textContent = `${name}: checking…`;
+      list.appendChild(item);
+      fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) })
+        .then((r) => r.json())
+        .then((h) => { item.textContent = `${name}: ${h.status} (db ${h.db}, version ${h.version})`; })
+        .catch(() => { item.textContent = `${name}: unavailable`; });
+    }
+  </script>
+</body>
+</html>

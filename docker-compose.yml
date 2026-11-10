@@ -1,0 +1,41 @@
+# Whole system locally: docker compose up --build
+# UI on http://localhost:8080, batches API on :8001, feedback API on :8002.
+# SQLite volumes are temporary: the move to one SQL Server container comes next.
+services:
+  batches:
+    build: ./services/batches
+    environment:
+      PORT: "8000"
+      DATA_DIR: /data
+      ALLOWED_ORIGIN: http://localhost:8080
+      GIT_SHA: local
+    ports:
+      - "8001:8000"
+    volumes:
+      - batches-data:/data
+
+  feedback:
+    build: ./services/feedback
+    environment:
+      PORT: "8000"
+      DATA_DIR: /data
+      ALLOWED_ORIGIN: http://localhost:8080
+      GIT_SHA: local
+      BATCHES_URL: http://batches:8000
+      BATCHES_TIMEOUT_S: "2"
+    ports:
+      - "8002:8000"
+    volumes:
+      - feedback-data:/data
+    # No depends_on: feedback must keep working on its own when batches is down.
+
+  ui:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./ui:/usr/share/nginx/html:ro
+
+volumes:
+  batches-data:
+  feedback-data:

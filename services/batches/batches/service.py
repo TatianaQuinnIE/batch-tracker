@@ -57,6 +57,17 @@ def list_batches(conn, today):
     return batches
 
 
+def get_batch(conn, batch_code, today):
+    row = conn.execute(
+        "SELECT * FROM batches WHERE batch_code = ?", (batch_code.strip().upper(),)
+    ).fetchone()
+    if row is None:
+        return None
+    batch = dict(row)
+    batch["status"] = expiry_status(date.fromisoformat(row["expires_on"]), today)
+    return batch
+
+
 def expiring_soon(conn, today):
     return [b for b in list_batches(conn, today) if b["status"] == "expiring_soon"]
 

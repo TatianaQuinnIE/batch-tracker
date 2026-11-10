@@ -60,3 +60,14 @@ def test_seed_if_empty_loads_once(conn, tmp_path):
     assert service.seed_if_empty(conn, seed_file) == 1
     assert service.seed_if_empty(conn, seed_file) == 0
     assert len(service.list_batches(conn, TODAY)) == 1
+
+
+def test_get_batch_finds_code_case_insensitively(conn):
+    service.create_batch(conn, "LAV-01", "Soap", date(2026, 1, 1), date(2027, 1, 1), 10)
+    batch = service.get_batch(conn, " lav-01 ", TODAY)
+    assert batch["product"] == "Soap"
+    assert batch["status"] == "ok"
+
+
+def test_get_batch_unknown_code_is_none(conn):
+    assert service.get_batch(conn, "NOPE", TODAY) is None
