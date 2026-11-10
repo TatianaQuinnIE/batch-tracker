@@ -1,5 +1,13 @@
 # Batch Tracker
 
+> **Assignment 2 (in progress):** the monolith is being split into two services, each in its own folder with its own Dockerfile, dependencies, tests and database: `services/batches/` and `services/feedback/`. The UI becomes static files in `ui/`. Run everything with:
+>
+> ```bash
+> docker compose up --build
+> ```
+>
+> UI on http://localhost:8080, batches API on http://localhost:8001, feedback API on http://localhost:8002 (`GET /health` on each). Tests per service: `cd services/batches && pip install -r requirements-dev.txt && pytest --cov=batches`. The sections below still describe the Assignment 1 monolith and will be rewritten.
+
 A small web app for a natural cosmetics workshop. Staff register each production **batch** (product, batch code, dates, units) and see what is expired or expiring within 30 days. Customers use the batch code printed on their label to report **feedback**, including whether they had a skin reaction. A batch is flagged when it has at least 3 reports and more than 10% of them mention a reaction.
 
 The app is one Flask process with one SQLite file. It has two feature domains that only share the `batch_code` text, so they can be split into separate services in Assignment 2.
