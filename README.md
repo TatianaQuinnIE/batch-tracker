@@ -1,12 +1,37 @@
 # Batch Tracker
 
-> **Assignment 2 (in progress):** the monolith is being split into two services, each in its own folder with its own Dockerfile, dependencies, tests and database: `services/batches/` and `services/feedback/`. The UI becomes static files in `ui/`. Run everything with:
+> **Assignment 2 (in progress).** The monolith is split into two services, `services/batches/` and `services/feedback/`, each with its own Dockerfile, dependencies, migrations, tests and SQL Server database. The UI becomes static files in `ui/`. The sections after this box still describe the Assignment 1 monolith and will be rewritten.
+>
+> **Run everything** (needs Docker Desktop; on Apple Silicon turn on *Use Rosetta for x86/amd64 emulation*, because SQL Server has no arm64 image):
 >
 > ```bash
 > docker compose up --build
 > ```
 >
-> UI on http://localhost:8080, batches API on http://localhost:8001, feedback API on http://localhost:8002 (`GET /health` on each). Tests per service: `cd services/batches && pip install -r requirements-dev.txt && pytest --cov=batches`. The sections below still describe the Assignment 1 monolith and will be rewritten.
+> UI on http://localhost:8080, batches API on http://localhost:8001, feedback API on http://localhost:8002 (`GET /health` on each). Compose starts SQL Server, runs `db/init.sql` once (one database and one login per service), then both services, which apply their migrations on startup. Data lives in the `mssql-data` volume, so `docker compose down` keeps it and `docker compose down -v` deletes it.
+>
+> **Run one service on its own** (SQL Server from compose, the service with Python 3.12):
+>
+> ```bash
+> docker compose up -d db db-init
+> cd services/batches
+> python3.12 -m venv .venv && source .venv/bin/activate
+> pip install -r requirements.txt
+> DATABASE_URL='mssql://batches_app:LocalOnly-Batches-2026@localhost:1433/batches' PORT=8001 python app.py
+> ```
+>
+> **Tests, lint and coverage** (per service, against the SQL Server from compose; the tests create and migrate their own `batches_test` / `feedback_test` database):
+>
+> ```bash
+> docker compose up -d db
+> cd services/batches            # or services/feedback
+> pip install -r requirements-dev.txt
+> ruff check --config ../../ruff.toml .
+> TEST_DATABASE_URL='mssql://sa:LocalOnly-Sa-2026@localhost:1433/master' \
+>   pytest --cov=batches --cov=migrate --cov=db --cov-report=term-missing --cov-fail-under=70
+> ```
+>
+> Result on 2026-11-18: batches 53 passed, 99% coverage; feedback 48 passed, 98% coverage.
 
 A small web app for a natural cosmetics workshop. Staff register each production **batch** (product, batch code, dates, units) and see what is expired or expiring within 30 days. Customers use the batch code printed on their label to report **feedback**, including whether they had a skin reaction. A batch is flagged when it has at least 3 reports and more than 10% of them mention a reaction.
 

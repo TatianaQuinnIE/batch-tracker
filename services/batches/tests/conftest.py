@@ -1,20 +1,54 @@
-import sqlite3
+"""Tests run against a real SQL Server, never against Azure SQL.
 
+TEST_DATABASE_URL points at the server's master database with a login allowed to
+create databases, e.g. mssql://sa:LocalOnly-Sa-2026@localhost:1433/master
+(docker compose up -d db locally; a throwaway SQL Server container in CI).
+A fresh batches_test database is created once per test run and migrated with the
+real migration files, so the tests also check that the migrations apply.
+"""
+import os
+from contextlib import closing
+from pathlib import Path
+
+import pymssql
 import pytest
 
-from app import create_app
-from batches import service
+import db
+from migrate import apply_migrations
+
+MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
+TEST_DB = "batches_test"
+
+
+@pytest.fixture(scope="session")
+def database_url():
+    admin_url = os.environ.get("TEST_DATABASE_URL")
+    if not admin_url:
+        pytest.skip("TEST_DATABASE_URL is not set (see README: Running the tests)")
+    with closing(pymssql.connect(**db.parse_database_url(admin_url), autocommit=True)) as admin:
+        cursor = admin.cursor()
+        cursor.execute(f"IF DB_ID('{TEST_DB}') IS NOT NULL "
+                       f"BEGIN ALTER DATABASE {TEST_DB} SET SINGLE_USER WITH ROLLBACK IMMEDIATE; "
+                       f"DROP DATABASE {TEST_DB}; END")
+        cursor.execute(f"CREATE DATABASE {TEST_DB}")
+    url = admin_url.rsplit("/", 1)[0] + "/" + TEST_DB
+    with closing(db.connect(url)) as conn:
+        apply_migrations(conn, MIGRATIONS_DIR)
+    return url
 
 
 @pytest.fixture
-def conn():
-    connection = sqlite3.connect(":memory:")
-    connection.row_factory = sqlite3.Row
-    service.init_schema(connection)
-    yield connection
-    connection.close()
+def conn(database_url):
+    """A connection to an empty batches table."""
+    with closing(db.connect(database_url)) as connection:
+        connection.cursor().execute("DELETE FROM dbo.batches")
+        connection.commit()
+        yield connection
 
 
 @pytest.fixture
-def client(tmp_path):
-    return create_app(str(tmp_path)).test_client()
+def client(conn, database_url):
+    """The Flask app on an empty table; create_app() then loads seed.json."""
+    from app import create_app
+
+    return create_app(database_url, connect_delays=()).test_client()

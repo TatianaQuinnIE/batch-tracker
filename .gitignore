@@ -7,3 +7,4 @@ data/
 htmlcov/
 .pytest_cache/
 .DS_Store
+.ruff_cache/

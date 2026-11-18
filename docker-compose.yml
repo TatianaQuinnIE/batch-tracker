@@ -1,34 +1,79 @@
-# Whole system locally: docker compose up --build
+# Whole system locally, from a clean clone: docker compose up --build
 # UI on http://localhost:8080, batches API on :8001, feedback API on :8002.
-# SQLite volumes are temporary: the move to one SQL Server container comes next.
+#
+# The passwords below are defaults for this local stack only. The SQL Server port is
+# bound to 127.0.0.1, so nothing outside this machine can use them, and none of them
+# is used on Azure (those live in GitHub Actions secrets). To use your own, put
+# MSSQL_SA_PASSWORD, BATCHES_DB_PASSWORD and FEEDBACK_DB_PASSWORD in a .env file
+# (git-ignored) next to this file.
+
+x-sql-image: &sql-image
+  image: mcr.microsoft.com/mssql/server:2022-latest
+  platform: linux/amd64   # no arm64 build: on Apple Silicon, Docker Desktop runs it under Rosetta
+
 services:
+  db:
+    <<: *sql-image
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-LocalOnly-Sa-2026}
+    ports:
+      - "127.0.0.1:1433:1433"   # for running the tests from the host
+    volumes:
+      - mssql-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' -b -o /dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  # One-off: creates both databases and both logins (idempotent), then exits.
+  db-init:
+    <<: *sql-image
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SQLCMDPASSWORD: ${MSSQL_SA_PASSWORD:-LocalOnly-Sa-2026}
+      BATCHES_DB_PASSWORD: ${BATCHES_DB_PASSWORD:-LocalOnly-Batches-2026}
+      FEEDBACK_DB_PASSWORD: ${FEEDBACK_DB_PASSWORD:-LocalOnly-Feedback-2026}
+    volumes:
+      - ./db:/db:ro
+    entrypoint: ["/opt/mssql-tools18/bin/sqlcmd", "-C", "-S", "db", "-U", "sa", "-b", "-i", "/db/init.sql"]
+    restart: "no"
+
   batches:
     build: ./services/batches
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
     environment:
       PORT: "8000"
-      DATA_DIR: /data
+      DATABASE_URL: mssql://batches_app:${BATCHES_DB_PASSWORD:-LocalOnly-Batches-2026}@db:1433/batches
       ALLOWED_ORIGIN: http://localhost:8080
       GIT_SHA: local
     ports:
       - "8001:8000"
-    volumes:
-      - batches-data:/data
 
   feedback:
     build: ./services/feedback
+    # Depends on the database only, not on batches: feedback must keep serving its
+    # own domain when the batches service is stopped.
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
     environment:
       PORT: "8000"
-      DATA_DIR: /data
+      DATABASE_URL: mssql://feedback_app:${FEEDBACK_DB_PASSWORD:-LocalOnly-Feedback-2026}@db:1433/feedback
       ALLOWED_ORIGIN: http://localhost:8080
       GIT_SHA: local
       BATCHES_URL: http://batches:8000
       BATCHES_TIMEOUT_S: "2"
     ports:
       - "8002:8000"
-    volumes:
-      - feedback-data:/data
-    # No depends_on: feedback must keep working on its own when batches is down.
 
+  # Static UI: stock nginx serving ui/ as it is (no Dockerfile, not a service container).
   ui:
     image: nginx:1.27-alpine
     ports:
@@ -37,5 +82,4 @@ services:
       - ./ui:/usr/share/nginx/html:ro
 
 volumes:
-  batches-data:
-  feedback-data:
+  mssql-data:
