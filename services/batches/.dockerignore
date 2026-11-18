@@ -2,11 +2,10 @@
 __pycache__/
 *.pyc
 tests/
-data/
-*.db
 .env
 .coverage
 .pytest_cache/
+.ruff_cache/
 requirements-dev.txt
 pytest.ini
 Dockerfile
