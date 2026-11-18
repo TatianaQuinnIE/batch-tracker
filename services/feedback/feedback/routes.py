@@ -3,14 +3,14 @@ from datetime import date
 
 from flask import Blueprint, current_app, jsonify, request
 
-from db import get_connection
+import db
 from feedback import service
 
 bp = Blueprint("feedback", __name__, url_prefix="/feedback")
 
 
 def _connect():
-    return closing(get_connection(current_app.config["DB_PATH"]))
+    return closing(db.connect(current_app.config["DATABASE_URL"]))
 
 
 @bp.get("")
@@ -30,26 +30,16 @@ def batch_summary(batch_code):
     with _connect() as conn:
         summary = service.summary_for_batch(conn, batch_code)
     if summary is None:
-        return jsonify(error="no feedback for this batch"), 404
+        return jsonify(error=f"no feedback for batch {batch_code.strip().upper()}"), 404
     return jsonify(summary)
 
 
 @bp.post("")
 def submit():
-    body = request.get_json(silent=True) or {}
+    # All parsing and validation lives in service.parse_feedback; a ValidationError
+    # becomes a 400 in app.py, so no raw Python exception text reaches the user.
+    feedback = service.parse_feedback(request.get_json(silent=True))
     with _connect() as conn:
-        try:
-            service.submit_feedback(
-                conn,
-                body["batch_code"],
-                int(body["rating"]),
-                bool(body.get("had_reaction", False)),
-                body.get("comment", ""),
-                date.today(),
-            )
-            summary = service.summary_for_batch(conn, body["batch_code"])
-        except KeyError as missing:
-            return jsonify(error=f"missing field {missing}"), 400
-        except (TypeError, ValueError) as err:
-            return jsonify(error=str(err)), 400
+        service.submit_feedback(conn, feedback, date.today())
+        summary = service.summary_for_batch(conn, feedback["batch_code"])
     return jsonify(summary), 201
