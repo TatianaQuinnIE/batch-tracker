@@ -1,0 +1,6 @@
+# Lint settings shared by both services (ruff check services/<name>).
+line-length = 110
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "W", "I", "B"]
