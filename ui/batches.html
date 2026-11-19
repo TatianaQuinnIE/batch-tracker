@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Batches · Batch Tracker</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <a class="brand" href="index.html" aria-label="Batch Tracker home">
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <circle cx="16" cy="16" r="15" fill="#1d3a2c"/>
+          <path d="M16 24c0-6 2-10 7-13-1 6-3 10-7 13z" fill="#5c8a68"/>
+          <path d="M16 24c0-5-2-8-6-10 0 5 2 8 6 10z" fill="#f3cdbd"/>
+          <circle cx="16" cy="24.5" r="1.6" fill="#e0a526"/>
+        </svg>
+        <span>Batch Tracker</span>
+      </a>
+      <nav>
+        <a href="batches.html" aria-current="page">Batches</a>
+        <a href="feedback.html">Feedback</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">
+    <div class="top">
+      <div>
+        <p class="eyebrow">Production ledger</p>
+        <h1>Every batch, <em>accounted for.</em></h1>
+        <p class="lead">Soonest expiry first, so nothing slips past its date on the shelf.</p>
+      </div>
+      <div class="stones" aria-label="Batch summary">
+        <div class="stone bad"><b id="n-expired">–</b><span>Expired</span></div>
+        <div class="stone warn"><b id="n-soon">–</b><span>Expiring in 30 days</span></div>
+        <div class="stone good"><b id="n-ok">–</b><span>In date</span></div>
+      </div>
+    </div>
+
+    <p id="notice" class="notice" hidden></p>
+
+    <section class="card newbatch">
+      <h2>Register a new batch</h2>
+      <form id="new-batch">
+        <label>Batch code <input name="batch_code" placeholder="LAV-2610" maxlength="40" required></label>
+        <label>Product <input name="product" placeholder="Lavender soap bar" maxlength="120" required></label>
+        <label>Made on <input type="date" name="produced_on" required></label>
+        <label>Expires on <input type="date" name="expires_on" required></label>
+        <label>Units <input type="number" name="quantity" min="0" step="1" placeholder="0" required></label>
+        <button>Add batch</button>
+      </form>
+    </section>
+
+    <section class="card ledger">
+      <h2>On the shelf</h2>
+      <div id="ledger"><p class="loading">Loading the ledger…</p></div>
+    </section>
+
+    <script src="batches.js"></script>
+  </main>
+  <footer class="wrap" aria-label="Service status"></footer>
+</body>
+</html>

@@ -3,30 +3,54 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Batch Tracker</title>
-  <style>
-    body { font-family: Georgia, serif; background: #f7f1e4; color: #1f2b24; max-width: 40rem; margin: 3rem auto; padding: 0 1rem; }
-    li { margin: .4rem 0; }
-    code { font-family: ui-monospace, Menlo, monospace; }
-  </style>
+  <title>Home · Batch Tracker</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="config.js"></script>
+  <script src="app.js"></script>
 </head>
 <body>
-  <h1>Batch Tracker</h1>
-  <p>Static UI. The pages from Assignment 1 are being ported here; for now it shows whether each service answers.</p>
-  <ul id="status"></ul>
-  <script src="config.js"></script>
-  <script>
-    const services = { batches: APP_CONFIG.BATCHES_URL, feedback: APP_CONFIG.FEEDBACK_URL };
-    const list = document.getElementById("status");
-    for (const [name, url] of Object.entries(services)) {
-      const item = document.createElement("li");
-      item.textContent = `${name}: checking…`;
-      list.appendChild(item);
-      fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) })
-        .then((r) => r.json())
-        .then((h) => { item.textContent = `${name}: ${h.status} (db ${h.db}, version ${h.version})`; })
-        .catch(() => { item.textContent = `${name}: unavailable`; });
-    }
-  </script>
+  <header>
+    <div class="wrap">
+      <a class="brand" href="index.html" aria-label="Batch Tracker home">
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <circle cx="16" cy="16" r="15" fill="#1d3a2c"/>
+          <path d="M16 24c0-6 2-10 7-13-1 6-3 10-7 13z" fill="#5c8a68"/>
+          <path d="M16 24c0-5-2-8-6-10 0 5 2 8 6 10z" fill="#f3cdbd"/>
+          <circle cx="16" cy="24.5" r="1.6" fill="#e0a526"/>
+        </svg>
+        <span>Batch Tracker</span>
+      </a>
+      <nav>
+        <a href="batches.html">Batches</a>
+        <a href="feedback.html">Feedback</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">
+    <div class="intro">
+      <p class="eyebrow">The workshop ledger</p>
+      <h1>Made by hand. <em>Tracked with care.</em></h1>
+      <p class="lead">Every soap, oil and balm leaves the workshop with a batch code. Know what is about to expire, and hear the moment a customer reacts.</p>
+    </div>
+    <div class="doors">
+      <a class="door batches" href="batches.html">
+        <div>
+          <h2>Batches</h2>
+          <p>Register production runs and see what is expired or expiring in the next 30 days.</p>
+        </div>
+        <span class="go"><i>→</i>Open the ledger</span>
+        <svg viewBox="0 0 120 120" aria-hidden="true"><rect x="22" y="30" width="76" height="70" rx="12" fill="#f7f1e4"/><rect x="34" y="18" width="52" height="16" rx="5" fill="#f7f1e4"/></svg>
+      </a>
+      <a class="door feedback" href="feedback.html">
+        <div>
+          <h2>Feedback</h2>
+          <p>Customers report reactions by batch code. Batches with too many reactions are flagged.</p>
+        </div>
+        <span class="go"><i>→</i>Open feedback</span>
+        <svg viewBox="0 0 120 120" aria-hidden="true"><path d="M60 112C60 70 72 34 112 8c-6 46-22 82-52 104z" fill="#c4552f"/><path d="M60 112C58 80 44 56 12 40c2 36 18 60 48 72z" fill="#c4552f"/></svg>
+      </a>
+    </div>
+  </main>
+  <footer class="wrap" aria-label="Service status"></footer>
 </body>
 </html>
