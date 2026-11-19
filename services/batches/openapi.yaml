@@ -1,0 +1,164 @@
+openapi: 3.1.0
+info:
+  title: Batch Tracker - batches service
+  version: "1.0.0"
+  description: |
+    Production batches of the workshop and their expiry status. Owns the batches
+    database. The feedback service calls GET /batches and GET /batches/{batch_code}
+    across the seam (see system.yaml); their response shapes are the Batch schema below.
+    Written by hand and kept in step with the code by tests/test_openapi.py.
+servers:
+  - url: http://localhost:8001
+    description: Local, through docker compose
+paths:
+  /health:
+    get:
+      summary: Whether this service can read and write its own database
+      operationId: health
+      responses:
+        "200":
+          description: The database answered a write and a read.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthOk" }
+        "503":
+          description: The database did not answer (for example still resuming from pause).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthError" }
+  /batches:
+    get:
+      summary: Every batch, soonest expiry first
+      operationId: listBatches
+      responses:
+        "200":
+          description: All batches, ordered by expires_on then batch_code.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Batch" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+    post:
+      summary: Register a new batch
+      operationId: createBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewBatch" }
+      responses:
+        "201":
+          description: The batch as stored, with its expiry status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Batch" }
+        "400": { $ref: "#/components/responses/BadInput" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+  /batches/expiring-soon:
+    get:
+      summary: Batches already expired or expiring in the next 30 days
+      operationId: listExpiringSoon
+      responses:
+        "200":
+          description: Batches whose status is expired or expiring_soon.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Batch" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+  /batches/{batch_code}:
+    get:
+      summary: One batch by its code (case-insensitive)
+      operationId: getBatch
+      parameters:
+        - name: batch_code
+          in: path
+          required: true
+          description: The code printed on the label, e.g. ROS-2608. Trimmed and upper-cased.
+          schema: { type: string, maxLength: 40 }
+      responses:
+        "200":
+          description: The batch.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Batch" }
+        "404":
+          description: No batch with that code.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "batch NOPE not found" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+components:
+  responses:
+    BadInput:
+      description: The input was invalid; the message says which field and why.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: "quantity must be a whole number" }
+    DatabaseUnavailable:
+      description: The database is not reachable right now (paused or resuming).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: "the database is not available right now, try again in a minute" }
+  schemas:
+    NewBatch:
+      type: object
+      required: [batch_code, product, produced_on, expires_on, quantity]
+      properties:
+        batch_code:
+          type: string
+          maxLength: 40
+          pattern: "^\\s*[A-Za-z0-9][A-Za-z0-9-]*\\s*$"
+          description: Letters, digits and hyphens. Stored upper-case; must be unique.
+          example: LAV-2610
+        product: { type: string, minLength: 1, maxLength: 120, example: Lavender soap bar }
+        produced_on: { type: string, format: date, example: "2026-10-01" }
+        expires_on:
+          type: string
+          format: date
+          description: Must be after produced_on.
+          example: "2027-10-01"
+        quantity:
+          description: Whole number of units, 0 or more. Numeric text such as "12" is accepted.
+          oneOf:
+            - { type: integer, minimum: 0 }
+            - { type: string, pattern: "^\\s*\\d+\\s*$" }
+          example: 120
+    Batch:
+      type: object
+      required: [batch_code, product, produced_on, expires_on, quantity, status]
+      additionalProperties: false
+      properties:
+        batch_code: { type: string, example: LAV-2607 }
+        product: { type: string, example: Lavender soap bar }
+        produced_on: { type: string, format: date }
+        expires_on: { type: string, format: date }
+        quantity: { type: integer, minimum: 0 }
+        status:
+          type: string
+          enum: [ok, expiring_soon, expired]
+          description: expired if past expires_on, expiring_soon within 30 days, ok otherwise.
+    HealthOk:
+      type: object
+      required: [status, db, version]
+      properties:
+        status: { const: ok }
+        db: { const: ok }
+        version: { type: string, description: Git SHA of the deployed commit, example: 3f2a9c1 }
+    HealthError:
+      type: object
+      required: [status, db, version]
+      properties:
+        status: { const: error }
+        db: { const: unreachable }
+        version: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }

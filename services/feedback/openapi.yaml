@@ -1,0 +1,187 @@
+openapi: 3.1.0
+info:
+  title: Batch Tracker - feedback service
+  version: "1.0.0"
+  description: |
+    Customer reports per batch, reaction rate and flagging. Owns the feedback
+    database. Summaries are joined in code with product and expiry details from the
+    batches service (GET /batches, GET /batches/{batch_code}, timeout BATCHES_TIMEOUT_S).
+    If batches does not answer, the summaries are still returned with batch = null,
+    batches_service = "unavailable" and a notice.
+    Written by hand and kept in step with the code by tests/test_openapi.py.
+servers:
+  - url: http://localhost:8002
+    description: Local, through docker compose
+paths:
+  /health:
+    get:
+      summary: Whether this service can read and write its own database
+      description: Reflects this service only; it does not call the batches service.
+      operationId: health
+      responses:
+        "200":
+          description: The database answered a write and a read.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthOk" }
+        "503":
+          description: The database did not answer (for example still resuming from pause).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthError" }
+  /feedback:
+    get:
+      summary: A summary per batch code that has feedback, with batch details
+      operationId: listSummaries
+      responses:
+        "200":
+          description: Summaries ordered by batch_code. Still 200 when batches is unavailable.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SummaryList" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+    post:
+      summary: Submit one customer report
+      description: |
+        The batch code is saved even if the batches service does not know it (a report
+        can arrive before the batch is registered) or does not answer.
+      operationId: submitFeedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewFeedback" }
+      responses:
+        "201":
+          description: The report was saved; the updated summary for its batch.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BatchSummary" }
+        "400": { $ref: "#/components/responses/BadInput" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+  /feedback/flagged:
+    get:
+      summary: Only the flagged batches (3+ reports and over 10% reactions)
+      operationId: listFlagged
+      responses:
+        "200":
+          description: Flagged summaries. Still 200 when batches is unavailable.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SummaryList" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+  /feedback/{batch_code}:
+    get:
+      summary: The summary of one batch code
+      operationId: getSummary
+      parameters:
+        - name: batch_code
+          in: path
+          required: true
+          description: Trimmed and upper-cased before the lookup.
+          schema: { type: string, maxLength: 40 }
+      responses:
+        "200":
+          description: The summary, with batch details if batches answered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BatchSummary" }
+        "404":
+          description: No feedback for that batch code.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { error: "no feedback for batch NOPE" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+components:
+  responses:
+    BadInput:
+      description: The input was invalid; the message says which field and why.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: "rating must be between 1 and 5" }
+    DatabaseUnavailable:
+      description: The feedback database is not reachable right now (paused or resuming).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: "the database is not available right now, try again in a minute" }
+  schemas:
+    NewFeedback:
+      type: object
+      required: [batch_code, rating, had_reaction]
+      properties:
+        batch_code: { type: string, minLength: 1, maxLength: 40, example: ROS-2608 }
+        rating:
+          description: Whole number from 1 to 5. Numeric text such as "4" is accepted.
+          oneOf:
+            - { type: integer, minimum: 1, maximum: 5 }
+            - { type: string, pattern: "^\\s*[1-5]\\s*$" }
+          example: 4
+        had_reaction:
+          type: boolean
+          description: Must be a real JSON true or false; "false" as text is rejected.
+        comment: { type: string, maxLength: 1000, default: "" }
+    BatchDetails:
+      description: Copied from the batches service's Batch for display; null if unknown or unavailable.
+      type: [object, "null"]
+      required: [product, expires_on, status]
+      properties:
+        product: { type: string }
+        expires_on: { type: string, format: date }
+        status: { type: string, enum: [ok, expiring_soon, expired] }
+    Summary:
+      type: object
+      required: [batch_code, reports, reactions, reaction_rate, average_rating, flagged, batch]
+      properties:
+        batch_code: { type: string, example: ROS-2608 }
+        reports: { type: integer, minimum: 1 }
+        reactions: { type: integer, minimum: 0 }
+        reaction_rate: { type: number, minimum: 0, maximum: 1, example: 0.33 }
+        average_rating: { type: number, minimum: 1, maximum: 5, example: 3.5 }
+        flagged: { type: boolean }
+        batch: { $ref: "#/components/schemas/BatchDetails" }
+    CrossSeamStatus:
+      type: object
+      required: [batches_service, notice]
+      properties:
+        batches_service:
+          type: string
+          enum: [ok, unavailable]
+          description: Whether the batches service answered within BATCHES_TIMEOUT_S.
+        notice:
+          type: [string, "null"]
+          description: Text to show the user when batches_service is unavailable.
+    BatchSummary:
+      allOf:
+        - { $ref: "#/components/schemas/Summary" }
+        - { $ref: "#/components/schemas/CrossSeamStatus" }
+    SummaryList:
+      allOf:
+        - type: object
+          required: [summaries]
+          properties:
+            summaries:
+              type: array
+              items: { $ref: "#/components/schemas/Summary" }
+        - { $ref: "#/components/schemas/CrossSeamStatus" }
+    HealthOk:
+      type: object
+      required: [status, db, version]
+      properties:
+        status: { const: ok }
+        db: { const: ok }
+        version: { type: string, description: Git SHA of the deployed commit }
+    HealthError:
+      type: object
+      required: [status, db, version]
+      properties:
+        status: { const: error }
+        db: { const: unreachable }
+        version: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
