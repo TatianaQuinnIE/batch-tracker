@@ -2,3 +2,6 @@
 pytest==8.3.4
 pytest-cov==6.0.0
 ruff==0.8.4
+# Only for the tests that check the code against openapi.yaml
+PyYAML==6.0.3
+jsonschema==4.26.0

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Feedback · Batch Tracker</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <a class="brand" href="index.html" aria-label="Batch Tracker home">
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <circle cx="16" cy="16" r="15" fill="#1d3a2c"/>
+          <path d="M16 24c0-6 2-10 7-13-1 6-3 10-7 13z" fill="#5c8a68"/>
+          <path d="M16 24c0-5-2-8-6-10 0 5 2 8 6 10z" fill="#f3cdbd"/>
+          <circle cx="16" cy="24.5" r="1.6" fill="#e0a526"/>
+        </svg>
+        <span>Batch Tracker</span>
+      </a>
+      <nav>
+        <a href="batches.html">Batches</a>
+        <a href="feedback.html" aria-current="page">Feedback</a>
+      </nav>
+    </div>
+  </header>
+  <main class="wrap">
+    <section class="card hero">
+      <div class="hero-side">
+        <p class="eyebrow">Customer care</p>
+        <h1>Had a reaction? <em>Tell us.</em></h1>
+        <p>Every report goes straight to the people who made your product.</p>
+        <ol>
+          <li>Find the batch code on your label</li>
+          <li>Rate it and tell us how your skin felt</li>
+          <li>We check the whole batch</li>
+        </ol>
+        <svg class="leaf" viewBox="0 0 120 120" aria-hidden="true"><path d="M60 112C60 70 72 34 112 8c-6 46-22 82-52 104z" fill="#f7f1e4"/><path d="M60 112C58 80 44 56 12 40c2 36 18 60 48 72z" fill="#f3cdbd"/></svg>
+      </div>
+      <div class="hero-form">
+        <p id="form-notice" class="notice" hidden></p>
+        <form id="report">
+          <label>Batch code <input name="batch_code" placeholder="e.g. ROS-2608" maxlength="40" required></label>
+          <div class="field">How did you like it?
+            <div class="stars">
+              <label><input type="radio" name="rating" value="1" required aria-label="1 out of 5"><span>★</span></label><label><input type="radio" name="rating" value="2" aria-label="2 out of 5"><span>★</span></label><label><input type="radio" name="rating" value="3" aria-label="3 out of 5"><span>★</span></label><label><input type="radio" name="rating" value="4" aria-label="4 out of 5"><span>★</span></label><label><input type="radio" name="rating" value="5" aria-label="5 out of 5"><span>★</span></label>
+            </div>
+          </div>
+          <div class="field">Any skin reaction?
+            <div class="seg">
+              <label><input type="radio" name="had_reaction" value="" checked><span>No, all good</span></label>
+              <label><input type="radio" name="had_reaction" value="on"><span>Yes, I reacted</span></label>
+            </div>
+          </div>
+          <label>Anything else? <textarea name="comment" maxlength="1000" placeholder="What happened, where on the skin, how long after"></textarea></label>
+          <button>Send feedback</button>
+        </form>
+      </div>
+    </section>
+
+    <div class="staff-head">
+      <div>
+        <p class="eyebrow">For workshop staff</p>
+        <h2>How each batch is landing</h2>
+      </div>
+      <p class="dim" style="margin:0">Flagged at 3+ reports with over 10% reactions</p>
+    </div>
+
+    <p id="notice" class="notice" hidden></p>
+    <div id="alerts"></div>
+    <section class="card list" id="summaries"><p class="loading">Loading feedback…</p></section>
+
+    <script src="feedback.js"></script>
+  </main>
+  <footer class="wrap" aria-label="Service status"></footer>
+</body>
+</html>

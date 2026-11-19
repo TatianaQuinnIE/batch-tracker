@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pymssql
 import pytest
+from stub_batches import StubBatches
 
 import db
 from migrate import apply_migrations
@@ -47,8 +48,19 @@ def conn(database_url):
 
 
 @pytest.fixture
-def client(conn, database_url):
-    """The Flask app on an empty feedback table."""
+def batches_stub():
+    """A stub batches service on a random local port (see stub_batches.py)."""
+    stub = StubBatches().start()
+    yield stub
+    stub.stop()
+
+
+@pytest.fixture
+def client(conn, database_url, batches_stub):
+    """The Flask app on an empty feedback table, calling the stub batches service."""
     from app import create_app
 
-    return create_app(database_url, connect_delays=()).test_client()
+    app = create_app(database_url, connect_delays=())
+    app.config["BATCHES_URL"] = batches_stub.url
+    app.config["BATCHES_TIMEOUT_S"] = 0.5
+    return app.test_client()

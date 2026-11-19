@@ -31,7 +31,19 @@
 >   pytest --cov=batches --cov=migrate --cov=db --cov-report=term-missing --cov-fail-under=70
 > ```
 >
-> Result on 2026-11-18: batches 53 passed, 99% coverage; feedback 48 passed, 98% coverage.
+> Result on 2026-11-19: batches 58 passed, 99% coverage; feedback 69 passed, 98% coverage. Feedback's tests replace the batches service with a stub HTTP server (`tests/stub_batches.py`) that can be made slow, broken or stopped.
+>
+> **Cross-seam integration test** (against the real compose stack; it stops and restarts the batches container):
+>
+> ```bash
+> docker compose up -d --build
+> pip install pytest==8.3.4
+> pytest -v tests/integration
+> ```
+>
+> **The cross-seam flow and partial failure.** The feedback page (http://localhost:8080/feedback.html) shows each batch's product and expiry next to its reaction rate; feedback fetches them from batches over HTTP with a 2 s timeout (`BATCHES_TIMEOUT_S`). Try `docker compose stop batches` and reload: feedback still lists every report, with the notice *"Batch details are unavailable right now"*, and the batches page says the service is starting up and retries. `docker compose start batches` brings the details back.
+>
+> **API description:** `services/batches/openapi.yaml` and `services/feedback/openapi.yaml` (OpenAPI 3.1, validated in CI and checked against the real routes by the tests).
 
 A small web app for a natural cosmetics workshop. Staff register each production **batch** (product, batch code, dates, units) and see what is expired or expiring within 30 days. Customers use the batch code printed on their label to report **feedback**, including whether they had a skin reaction. A batch is flagged when it has at least 3 reports and more than 10% of them mention a reaction.
 

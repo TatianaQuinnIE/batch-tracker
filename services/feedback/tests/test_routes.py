@@ -29,7 +29,7 @@ def test_no_reaction_is_not_counted_as_reaction(client):
 def test_three_reactions_flag_the_batch(client):
     for _ in range(3):
         client.post("/feedback", json={**REPORT, "rating": 2, "had_reaction": True})
-    flagged = client.get("/feedback/flagged").get_json()
+    flagged = client.get("/feedback/flagged").get_json()["summaries"]
     assert [s["batch_code"] for s in flagged] == ["ROS-2608"]
 
 
@@ -43,7 +43,7 @@ def test_out_of_range_rating_is_400_and_nothing_written(client):
     response = client.post("/feedback", json={**REPORT, "rating": 9})
     assert response.status_code == 400
     assert response.get_json() == {"error": "rating must be between 1 and 5"}
-    assert client.get("/feedback").get_json() == []
+    assert client.get("/feedback").get_json()["summaries"] == []
 
 
 def test_non_numeric_rating_gives_a_readable_400(client):
@@ -59,7 +59,8 @@ def test_missing_field_names_the_field(client):
 
 
 def test_list_summaries_starts_empty(client):
-    assert client.get("/feedback").get_json() == []
+    assert client.get("/feedback").get_json() == {
+        "summaries": [], "batches_service": "ok", "notice": None}
 
 
 def test_cors_header_allows_only_the_ui_origin(client):

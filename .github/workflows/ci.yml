@@ -6,7 +6,27 @@ on:
   push:
   pull_request:
 
+# A newer push to the same branch cancels the run that is still going (as in the
+# class CI exercise), so only the latest commit uses runner minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  describe:
+    # The machine-readable system description must be valid: each openapi.yaml against
+    # the OpenAPI specification. (Each service's tests also check its document against
+    # its real routes and responses, and feedback checks the batches document it calls.)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install openapi-spec-validator==0.9.0
+      - name: Validate the OpenAPI documents
+        run: openapi-spec-validator services/batches/openapi.yaml services/feedback/openapi.yaml
+
   test:
     name: test (${{ matrix.service }})
     runs-on: ubuntu-latest
@@ -55,10 +75,42 @@ jobs:
           pytest --cov=${{ matrix.service }} --cov=migrate --cov=db
           --cov-report=term-missing --cov-fail-under=70
 
+  integration:
+    # The cross-seam test against the real compose stack: both service images, SQL
+    # Server and db/init.sql, exactly as `docker compose up --build` runs locally.
+    # Passwords are random for this run only (compose reads them from the environment).
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Random passwords for this run
+        run: |
+          for name in MSSQL_SA_PASSWORD BATCHES_DB_PASSWORD FEEDBACK_DB_PASSWORD; do
+            value="Ci-$(openssl rand -hex 16)-Aa1"
+            echo "::add-mask::$value"
+            echo "$name=$value" >> "$GITHUB_ENV"
+          done
+      - name: Start the stack
+        run: docker compose up -d --build
+      - run: pip install pytest==8.3.4 ruff==0.8.4
+      - name: Lint the integration test
+        run: ruff check --config ruff.toml tests
+      - name: Cross-seam integration test (including batches stopped)
+        run: pytest -v tests/integration
+      - name: Service logs (on failure)
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v
+
   images:
     # Build every service image on every push and PR, so a broken Dockerfile fails CI.
     # Images are pushed to GHCR, tagged with the commit SHA, only on main.
-    needs: test
+    needs: [test, describe, integration]
     runs-on: ubuntu-latest
     permissions:
       contents: read
