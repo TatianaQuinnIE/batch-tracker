@@ -25,7 +25,8 @@ def create_app(database_url=None, connect_delays=db.STARTUP_RETRY_DELAYS_S):
     app.config["DATABASE_URL"] = database_url or os.environ.get("DATABASE_URL", "")
     app.config["ALLOWED_ORIGIN"] = os.environ.get("ALLOWED_ORIGIN", "http://localhost:8080")
     app.config["VERSION"] = os.environ.get("GIT_SHA", "dev")
-    # Not called yet: the cross-seam call to the batches service comes in a later commit.
+    # Where the batches service is (compose: http://batches:8000; Azure: its Container
+    # App URL) and how long any call to it may take before feedback degrades.
     app.config["BATCHES_URL"] = os.environ.get("BATCHES_URL", "http://localhost:8001")
     app.config["BATCHES_TIMEOUT_S"] = float(os.environ.get("BATCHES_TIMEOUT_S", "2"))
 
