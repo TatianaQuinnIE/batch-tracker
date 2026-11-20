@@ -21,17 +21,22 @@ concurrency:
 jobs:
   describe:
     # The machine-readable system description must be valid: each openapi.yaml against
-    # the OpenAPI specification. (Each service's tests also check its document against
-    # its real routes and responses, and feedback checks the batches document it calls.)
+    # the OpenAPI specification, and system.yaml against the course schema
+    # (system.schema.json) and against the code: services, environment variables and
+    # defaults, migration folders, and the endpoints feedback calls on batches.
+    # (Each service's tests also check its document against its real routes and
+    # responses, and feedback checks the batches document it calls.)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install openapi-spec-validator==0.9.0
+      - run: pip install openapi-spec-validator==0.9.0 pyyaml==6.0.2 pytest==8.3.4
       - name: Validate the OpenAPI documents
         run: openapi-spec-validator services/batches/openapi.yaml services/feedback/openapi.yaml
+      - name: Validate system.yaml against the schema and the code
+        run: pytest -v tests/test_system_description.py
 
   test:
     name: test (${{ matrix.service }})
