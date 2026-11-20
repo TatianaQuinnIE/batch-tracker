@@ -1,0 +1,141 @@
+name: CD
+
+# Every push to main: first the whole CI (ci.yml: lint, tests, describe, integration,
+# images pushed to GHCR with the commit SHA), then deploy that same SHA to Azure.
+# If any CI job fails, nothing is deployed. Decisions in ADR-8.
+#
+# Needs (set once in the initial setup, see README):
+#   secrets   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+#             BATCHES_DB_PASSWORD, FEEDBACK_DB_PASSWORD
+#   variables PREFIX, RESOURCE_GROUP, UI_STORAGE
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time. A newer push waits for the running deploy instead of
+# cancelling it half-way (which could leave one service on the old version).
+concurrency:
+  group: cd-main
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    # The images job pushes to GHCR, so the called workflow needs packages: write.
+    permissions:
+      contents: read
+      packages: write
+
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # OIDC: azure/login exchanges GitHub's token, no Azure password stored
+      contents: read
+    env:
+      PREFIX: ${{ vars.PREFIX }}
+      RG: ${{ vars.RESOURCE_GROUP }}
+      UI_STORAGE: ${{ vars.UI_STORAGE }}
+      SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sign in to Azure as the managed identity (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Look up the addresses
+        run: |
+          az extension add --name containerapp --upgrade --only-show-errors
+          ui_origin=$(az storage account show -n "$UI_STORAGE" -g "$RG" --query primaryEndpoints.web -o tsv)
+          batches_fqdn=$(az containerapp show -n "$PREFIX-batches" -g "$RG" --query properties.configuration.ingress.fqdn -o tsv)
+          feedback_fqdn=$(az containerapp show -n "$PREFIX-feedback" -g "$RG" --query properties.configuration.ingress.fqdn -o tsv)
+          {
+            echo "REGISTRY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+            echo "UI_ORIGIN=${ui_origin%/}"
+            echo "BATCHES_URL=https://$batches_fqdn"
+            echo "FEEDBACK_URL=https://$feedback_fqdn"
+            echo "SQL_HOST=$PREFIX-sql.database.windows.net"
+            # A new revision on every run, also when a failed run is re-run for the same SHA.
+            echo "REVISION=git-${SHA::7}-${GITHUB_RUN_ATTEMPT}"
+          } >> "$GITHUB_ENV"
+
+      - name: Deploy batches
+        env:
+          DB_PASSWORD: ${{ secrets.BATCHES_DB_PASSWORD }}
+        run: |
+          password=$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["DB_PASSWORD"], safe=""))')
+          database_url="mssql://batches_app:${password}@${SQL_HOST}:1433/${PREFIX}-batches-db"
+          echo "::add-mask::$database_url"
+          az containerapp secret set -n "$PREFIX-batches" -g "$RG" \
+            --secrets "database-url=$database_url" -o none
+          az containerapp update -n "$PREFIX-batches" -g "$RG" \
+            --image "$REGISTRY/batch-tracker-batches:$SHA" \
+            --revision-suffix "$REVISION" \
+            --set-env-vars PORT=8000 DATABASE_URL=secretref:database-url \
+                           ALLOWED_ORIGIN="$UI_ORIGIN" GIT_SHA="$SHA" \
+            -o none
+
+      - name: Deploy feedback
+        env:
+          DB_PASSWORD: ${{ secrets.FEEDBACK_DB_PASSWORD }}
+        run: |
+          password=$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["DB_PASSWORD"], safe=""))')
+          database_url="mssql://feedback_app:${password}@${SQL_HOST}:1433/${PREFIX}-feedback-db"
+          echo "::add-mask::$database_url"
+          az containerapp secret set -n "$PREFIX-feedback" -g "$RG" \
+            --secrets "database-url=$database_url" -o none
+          az containerapp update -n "$PREFIX-feedback" -g "$RG" \
+            --image "$REGISTRY/batch-tracker-feedback:$SHA" \
+            --revision-suffix "$REVISION" \
+            --set-env-vars PORT=8000 DATABASE_URL=secretref:database-url \
+                           ALLOWED_ORIGIN="$UI_ORIGIN" GIT_SHA="$SHA" \
+                           BATCHES_URL="$BATCHES_URL" BATCHES_TIMEOUT_S=2 \
+            -o none
+
+      - name: Publish the UI
+        run: |
+          # The committed config.js points at localhost (compose); here it gets the
+          # Container Apps addresses. no-cache, so browsers pick up a new address at once.
+          cat > ui/config.js <<EOF
+          // Written by the CD workflow for commit $SHA.
+          window.APP_CONFIG = {
+            BATCHES_URL: "$BATCHES_URL",
+            FEEDBACK_URL: "$FEEDBACK_URL",
+          };
+          EOF
+          az storage blob upload-batch --account-name "$UI_STORAGE" --auth-mode key \
+            --source ui --destination '$web' --overwrite \
+            --content-cache-control "no-cache" -o none
+          curl -fsS --retry 5 --retry-delay 5 "$UI_ORIGIN/config.js" | grep -q "$FEEDBACK_URL"
+
+      - name: Wait until both services are healthy on this commit
+        run: |
+          # Up to 10 minutes each: a cold start plus a paused database resuming takes
+          # 1-2 minutes, and Container Apps answers 503 while the container starts.
+          # /health is 200 only when the service can read and write its own database,
+          # and its version must be this commit, so an old revision does not count.
+          wait_healthy() {
+            local name=$1 url=$2 deadline=$((SECONDS + 600)) body
+            while true; do
+              body=$(curl -sS --max-time 60 -w '\n%{http_code}' "$url/health" || true)
+              if [ "$(tail -n1 <<<"$body")" = "200" ] \
+                 && [ "$(head -n -1 <<<"$body" | jq -r .version)" = "$SHA" ]; then
+                echo "$name healthy on $SHA: $(head -n -1 <<<"$body")"
+                return 0
+              fi
+              if (( SECONDS > deadline )); then
+                echo "::error::$name never returned 200 on /health for $SHA. Last answer: $body"
+                return 1
+              fi
+              echo "$name not ready yet ($(tail -n1 <<<"$body")), retrying in 15 s"
+              sleep 15
+            done
+          }
+          wait_healthy batches "$BATCHES_URL"
+          wait_healthy feedback "$FEEDBACK_URL"
+          echo "Live: $UI_ORIGIN" >> "$GITHUB_STEP_SUMMARY"

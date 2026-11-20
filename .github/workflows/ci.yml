@@ -1,31 +1,42 @@
 name: CI
 
-# Every push (any branch) and every pull request: lint, test with coverage, build images.
+# Every push to a branch other than main and every pull request: lint, test with
+# coverage, build images. On main this workflow is not triggered by the push itself:
+# CD (cd.yml) calls it with workflow_call and deploys only if every job here passed,
+# so CI does not run twice for the same commit.
 # CI never connects to Azure SQL: tests use a throwaway SQL Server container.
 on:
   push:
+    branches-ignore: [main]
   pull_request:
+  workflow_call:
 
 # A newer push to the same branch cancels the run that is still going (as in the
-# class CI exercise), so only the latest commit uses runner minutes.
+# class CI exercise), so only the latest commit uses runner minutes. The group starts
+# with a fixed "ci-" rather than github.workflow, which is "CD" when CD calls this file.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   describe:
     # The machine-readable system description must be valid: each openapi.yaml against
-    # the OpenAPI specification. (Each service's tests also check its document against
-    # its real routes and responses, and feedback checks the batches document it calls.)
+    # the OpenAPI specification, and system.yaml against the course schema
+    # (system.schema.json) and against the code: services, environment variables and
+    # defaults, migration folders, and the endpoints feedback calls on batches.
+    # (Each service's tests also check its document against its real routes and
+    # responses, and feedback checks the batches document it calls.)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install openapi-spec-validator==0.9.0
+      - run: pip install openapi-spec-validator==0.9.0 pyyaml==6.0.2 pytest==8.3.4
       - name: Validate the OpenAPI documents
         run: openapi-spec-validator services/batches/openapi.yaml services/feedback/openapi.yaml
+      - name: Validate system.yaml against the schema and the code
+        run: pytest -v tests/test_system_description.py
 
   test:
     name: test (${{ matrix.service }})
@@ -109,7 +120,8 @@ jobs:
 
   images:
     # Build every service image on every push and PR, so a broken Dockerfile fails CI.
-    # Images are pushed to GHCR, tagged with the commit SHA, only on main.
+    # Images are pushed to GHCR, tagged with the commit SHA, only on main (that is,
+    # when CD calls this workflow for a push to main).
     needs: [test, describe, integration]
     runs-on: ubuntu-latest
     permissions:
@@ -141,5 +153,8 @@ jobs:
         with:
           context: services/${{ matrix.service }}
           push: ${{ env.PUSH == 'true' }}
+          # A plain image manifest, without the attestation that buildx adds by default:
+          # Azure Container Apps cannot pull images that carry it.
+          provenance: false
           tags: ${{ env.IMAGE }}:${{ github.sha }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}

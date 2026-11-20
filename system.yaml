@@ -1,0 +1,90 @@
+# Machine-readable description of the system, in the course format (system.schema.json).
+# CI checks it against the schema and against the code itself
+# (tests/test_system_description.py): the services in docker-compose.yml, every
+# environment variable each service reads and its default, the OpenAPI documents,
+# the migration folders and the endpoints feedback calls on batches.
+student: tquinn.ieu2024
+prefix: tquinn-ieu2024
+public_url: https://tquinnieu2024ui.z28.web.core.windows.net
+
+ui:
+  path: ui/
+  storage_account: tquinnieu2024ui
+  calls: [batches, feedback]
+
+azure:
+  resource_group: rg-tquinn-ieu2024
+  container_apps_environment: tquinn-ieu2024-env
+  sql_server: tquinn-ieu2024-sql
+  registry: ghcr.io/tatianaquinnie
+
+services:
+  batches:
+    description: Batch register (product, batch code, dates, units) and expiry status.
+    path: services/batches/
+    openapi: services/batches/openapi.yaml
+    port_default: 8000
+    health: /health
+    migrations: services/batches/migrations
+    env:
+      PORT:
+        description: Port gunicorn listens on, always on 0.0.0.0.
+        default: "8000"
+      DATABASE_URL:
+        description: "This service's own database: mssql://user:password@host:1433/database (special characters URL-encoded). On Azure a Container Apps secret built by CD from the BATCHES_DB_PASSWORD GitHub secret."
+        secret: true
+      ALLOWED_ORIGIN:
+        description: The only browser origin allowed by CORS, the UI's address (on Azure the storage static website endpoint).
+        default: http://localhost:8080
+      GIT_SHA:
+        description: Commit the image was deployed from, returned as version by /health. Set by CD.
+        default: dev
+    azure:
+      container_app: tquinn-ieu2024-batches
+      sql_database: tquinn-ieu2024-batches-db
+
+  feedback:
+    description: Customer feedback by batch code, reaction rates and flagged batches; shows each batch's product and expiry fetched from batches.
+    path: services/feedback/
+    openapi: services/feedback/openapi.yaml
+    port_default: 8000
+    health: /health
+    migrations: services/feedback/migrations
+    env:
+      PORT:
+        description: Port gunicorn listens on, always on 0.0.0.0.
+        default: "8000"
+      DATABASE_URL:
+        description: "This service's own database: mssql://user:password@host:1433/database (special characters URL-encoded). On Azure a Container Apps secret built by CD from the FEEDBACK_DB_PASSWORD GitHub secret."
+        secret: true
+      ALLOWED_ORIGIN:
+        description: The only browser origin allowed by CORS, the UI's address (on Azure the storage static website endpoint).
+        default: http://localhost:8080
+      GIT_SHA:
+        description: Commit the image was deployed from, returned as version by /health. Set by CD.
+        default: dev
+      BATCHES_URL:
+        description: Base URL of the batches service (compose http://batches:8000, Azure its Container App HTTPS address).
+        default: http://localhost:8001
+      BATCHES_TIMEOUT_S:
+        description: Seconds any call to batches may take before feedback degrades.
+        default: "2"
+      REACTION_ALERT_RATE:
+        description: Reaction rate above which a batch with 3 or more reports is flagged.
+        default: "0.10"
+    calls:
+      - service: batches
+        url_env: BATCHES_URL
+        endpoints:
+          - GET /batches
+          - GET /batches/{batch_code}
+        timeout_s: 2
+        on_failure: >-
+          Feedback still answers within the timeout with its own data (reports, reaction
+          rates, flags) and still accepts new reports; each batch is null, with
+          batches_service "unavailable" and the notice "Batch details are unavailable
+          right now (the batches service did not answer)", which the UI shows.
+          Feedback's /health stays 200, because it checks only its own database.
+    azure:
+      container_app: tquinn-ieu2024-feedback
+      sql_database: tquinn-ieu2024-feedback-db
