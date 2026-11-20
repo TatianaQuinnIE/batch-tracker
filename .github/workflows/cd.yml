@@ -60,8 +60,10 @@ jobs:
             echo "BATCHES_URL=https://$batches_fqdn"
             echo "FEEDBACK_URL=https://$feedback_fqdn"
             echo "SQL_HOST=$PREFIX-sql.database.windows.net"
-            # A new revision on every run, also when a failed run is re-run for the same SHA.
-            echo "REVISION=git-${SHA::7}-${GITHUB_RUN_ATTEMPT}"
+            # Changes on every run, also when a failed run is re-run for the same SHA, so
+            # each run makes a new revision. (Express environments, like this one, refuse
+            # --revision-suffix, so the change comes from this environment variable.)
+            echo "DEPLOY_RUN=${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           } >> "$GITHUB_ENV"
 
       - name: Deploy batches
@@ -75,9 +77,8 @@ jobs:
             --secrets "database-url=$database_url" -o none
           az containerapp update -n "$PREFIX-batches" -g "$RG" \
             --image "$REGISTRY/batch-tracker-batches:$SHA" \
-            --revision-suffix "$REVISION" \
             --set-env-vars PORT=8000 DATABASE_URL=secretref:database-url \
-                           ALLOWED_ORIGIN="$UI_ORIGIN" GIT_SHA="$SHA" \
+                           ALLOWED_ORIGIN="$UI_ORIGIN" GIT_SHA="$SHA" DEPLOY_RUN="$DEPLOY_RUN" \
             -o none
 
       - name: Deploy feedback
@@ -91,10 +92,9 @@ jobs:
             --secrets "database-url=$database_url" -o none
           az containerapp update -n "$PREFIX-feedback" -g "$RG" \
             --image "$REGISTRY/batch-tracker-feedback:$SHA" \
-            --revision-suffix "$REVISION" \
             --set-env-vars PORT=8000 DATABASE_URL=secretref:database-url \
                            ALLOWED_ORIGIN="$UI_ORIGIN" GIT_SHA="$SHA" \
-                           BATCHES_URL="$BATCHES_URL" BATCHES_TIMEOUT_S=2 \
+                           BATCHES_URL="$BATCHES_URL" BATCHES_TIMEOUT_S=2 DEPLOY_RUN="$DEPLOY_RUN" \
             -o none
 
       - name: Publish the UI
