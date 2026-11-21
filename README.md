@@ -299,7 +299,31 @@ $ curl -s .../batches      # 4 rows, without the 002 fields
 CAL-2603 8   ROS-2608 45   ALO-2609 60   LAV-2607 120
 ```
 
-**After the deploy**: TODO, filled in after CD runs on main.
+**After the deploy** (2026-11-21, PR #7 merged as a721753, CD run 44907329909 green). The CD log's health check, which only passes on the deployed commit:
+
+```
+batches healthy on a7217538f483da2f6d6eb612d7ebd480b84b29bf: {"db":"ok","schema":"002_batch_recall.sql","status":"ok","version":"a7217538f483da2f6d6eb612d7ebd480b84b29bf"}
+feedback healthy on a7217538f483da2f6d6eb612d7ebd480b84b29bf: {"db":"ok","status":"ok","version":"a7217538f483da2f6d6eb612d7ebd480b84b29bf"}
+```
+
+And the batches API afterwards: the rows from before are all still there with the same quantities, and now carry the 002 fields as null (not recalled):
+
+```
+$ curl -s .../batches      # batch_code quantity recalled_on recall_reason
+CAL-2603 8   None None
+ROS-2608 45  None None
+ALO-2609 60  None None
+LAV-2607 120 None None
+LAV-2610 30  None None     # added through the UI
+```
+
+The batches log on Azure shows the migration applied once, about 0.1 s, on the first start of the new revision:
+
+```
+$ az containerapp logs show --name tquinn-ieu2024-batches --resource-group rg-tquinn-ieu2024 --tail 300 --format text | grep migration
+2026-11-21 13:11:11,697 INFO migrate applying migration 002_batch_recall.sql
+2026-11-21 13:11:11,800 INFO migrate applied migration 002_batch_recall.sql
+```
 
 ## Tests and coverage
 
