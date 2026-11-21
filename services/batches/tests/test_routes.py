@@ -10,7 +10,8 @@ NEW_BATCH = {
 def test_health_reports_ok_with_version(client):
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.get_json() == {"status": "ok", "db": "ok", "version": "dev"}
+    assert response.get_json() == {"status": "ok", "db": "ok", "version": "dev",
+                                   "schema": "002_batch_recall.sql"}
 
 
 def test_health_is_503_when_database_is_unreachable(client):

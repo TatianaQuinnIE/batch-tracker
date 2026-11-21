@@ -249,11 +249,15 @@ components:
         reason: { type: string, minLength: 1, maxLength: 200, example: Mould found in one jar }
     HealthOk:
       type: object
-      required: [status, db, version]
+      required: [status, db, version, schema]
       properties:
         status: { const: ok }
         db: { const: ok }
         version: { type: string, description: Git SHA of the deployed commit, example: 3f2a9c1 }
+        schema:
+          type: string
+          description: The last migration applied to this service's database.
+          example: 002_batch_recall.sql
     HealthError:
       type: object
       required: [status, db, version]
