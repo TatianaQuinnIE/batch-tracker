@@ -277,6 +277,30 @@ Open http://localhost:8000. The named volume keeps the database when the contain
 | GET | `/feedback/flagged` | JSON list of flagged batches |
 | GET | `/feedback/<batch_code>` | JSON summary for one batch (404 if no feedback) |
 
+Batches API, added in Assignment 2 with migration 002 (full list in `services/batches/openapi.yaml`):
+
+| Method | Path | Does |
+|---|---|---|
+| POST | `/batches/<batch_code>/recall` | Recalls a batch today with `{"reason": ...}`; once per batch |
+| PATCH | `/batches/<batch_code>` | Corrects `product`, `expires_on` and/or `quantity` |
+| DELETE | `/batches/<batch_code>` | Removes a batch registered by mistake (204) |
+
+## Migration 002 on Azure (evidence)
+
+`002_batch_recall.sql` adds `recalled_on` and `recall_reason` to `dbo.batches` (ADR-10). It was deployed through the pipeline to a database that already had data, and applied by the batches service on startup like 001.
+
+**Before the deploy** (2026-11-21, revision on commit 6d2458a, schema 001 only):
+
+```
+$ curl -s https://tquinn-ieu2024-batches.lemonsand-06d134dc.francecentral.azurecontainerapps.io/health
+{"db":"ok","status":"ok","version":"6d2458a076144b88381d5c0738314887e9c4c9fc"}
+
+$ curl -s .../batches      # 4 rows, without the 002 fields
+CAL-2603 8   ROS-2608 45   ALO-2609 60   LAV-2607 120
+```
+
+**After the deploy**: TODO, filled in after CD runs on main.
+
 ## Tests and coverage
 
 ```bash
