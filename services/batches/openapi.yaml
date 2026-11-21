@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Batch Tracker - batches service
-  version: "1.0.0"
+  version: "1.1.0"
   description: |
     Production batches of the workshop and their expiry status. Owns the batches
     database. The feedback service calls GET /batches and GET /batches/{batch_code}
@@ -91,8 +91,41 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
               example: { error: "batch NOPE not found" }
         "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+  /batches/{batch_code}/recall:
+    post:
+      summary: Recall a batch (pull it from sale today, with a reason)
+      description: |
+        Sets recalled_on to today and stores the reason. A batch can be recalled once;
+        the batch stays in the ledger and in GET /batches, but leaves expiring-soon.
+      operationId: recallBatch
+      parameters:
+        - name: batch_code
+          in: path
+          required: true
+          description: The code printed on the label, e.g. ROS-2608. Trimmed and upper-cased.
+          schema: { type: string, maxLength: 40 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Recall" }
+      responses:
+        "200":
+          description: The batch, now recalled.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Batch" }
+        "400": { $ref: "#/components/responses/BadInput" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
 components:
   responses:
+    NotFound:
+      description: No batch with that code.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { error: "batch NOPE not found" }
     BadInput:
       description: The input was invalid; the message says which field and why.
       content:
@@ -131,6 +164,9 @@ components:
           example: 120
     Batch:
       type: object
+      # recalled_on and recall_reason are not required: a revision from before
+      # migration 002 answers without them while a deploy rolls out (ADR-10), so a
+      # consumer such as feedback must not depend on them being there.
       required: [batch_code, product, produced_on, expires_on, quantity, status]
       additionalProperties: false
       properties:
@@ -143,6 +179,19 @@ components:
           type: string
           enum: [ok, expiring_soon, expired]
           description: expired if past expires_on, expiring_soon within 30 days, ok otherwise.
+        recalled_on:
+          type: [string, "null"]
+          format: date
+          description: Day the batch was recalled, or null. Added by migration 002.
+        recall_reason:
+          type: [string, "null"]
+          maxLength: 200
+          description: Why it was recalled, or null. Added by migration 002.
+    Recall:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 200, example: Mould found in one jar }
     HealthOk:
       type: object
       required: [status, db, version]

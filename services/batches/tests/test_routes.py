@@ -95,3 +95,34 @@ def test_preflight_for_json_post_is_allowed(client):
     })
     assert response.status_code == 200
     assert "POST" in response.headers["Access-Control-Allow-Methods"]
+
+
+# --- recall --------------------------------------------------------------------
+
+def test_recall_returns_the_recalled_batch(client):
+    response = client.post("/batches/lav-2607/recall", json={"reason": "Mould found in one jar"})
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["batch_code"] == "LAV-2607"
+    assert body["recall_reason"] == "Mould found in one jar"
+    assert body["recalled_on"] is not None
+
+
+def test_recall_without_reason_is_400(client):
+    response = client.post("/batches/LAV-2607/recall", json={})
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "reason is required"}
+
+
+def test_recall_twice_is_400(client):
+    client.post("/batches/LAV-2607/recall", json={"reason": "first"})
+    response = client.post("/batches/LAV-2607/recall", json={"reason": "second"})
+    assert response.status_code == 400
+    assert "already recalled" in response.get_json()["error"]
+
+
+def test_recall_unknown_batch_is_404(client):
+    response = client.post("/batches/nope/recall", json={"reason": "x"})
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "batch NOPE not found"}
+

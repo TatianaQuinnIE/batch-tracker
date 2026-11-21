@@ -8,9 +8,11 @@ import pymssql
 EXPIRING_SOON_DAYS = 30
 BATCH_CODE_MAX = 40
 PRODUCT_MAX = 120
+RECALL_REASON_MAX = 200
 BATCH_CODE_FORMAT = re.compile(r"^[A-Z0-9][A-Z0-9-]*$")
 
-COLUMNS = "batch_code, product, produced_on, expires_on, quantity"
+NEW_BATCH_COLUMNS = "batch_code, product, produced_on, expires_on, quantity"
+COLUMNS = NEW_BATCH_COLUMNS + ", recalled_on, recall_reason"
 
 
 class ValidationError(ValueError):
@@ -45,6 +47,10 @@ def _whole_number(body, field):
         return int(str(value).strip())
     except ValueError:
         raise ValidationError(f"{field} must be a whole number") from None
+
+
+def normalise_code(batch_code):
+    return batch_code.strip().upper()
 
 
 def parse_new_batch(body):
@@ -85,6 +91,8 @@ def _to_json(row, today):
         "expires_on": row["expires_on"].isoformat(),
         "quantity": row["quantity"],
         "status": expiry_status(row["expires_on"], today),
+        "recalled_on": row["recalled_on"].isoformat() if row["recalled_on"] else None,
+        "recall_reason": row["recall_reason"],
     }
 
 
@@ -93,7 +101,7 @@ def create_batch(conn, batch):
     cursor = conn.cursor()
     try:
         cursor.execute(
-            f"INSERT INTO dbo.batches ({COLUMNS}) VALUES (%s, %s, %s, %s, %s)",
+            f"INSERT INTO dbo.batches ({NEW_BATCH_COLUMNS}) VALUES (%s, %s, %s, %s, %s)",
             (batch["batch_code"], batch["product"], batch["produced_on"],
              batch["expires_on"], batch["quantity"]),
         )
@@ -113,14 +121,38 @@ def get_batch(conn, batch_code, today):
     cursor = conn.cursor()
     cursor.execute(
         f"SELECT {COLUMNS} FROM dbo.batches WHERE batch_code = %s",
-        (batch_code.strip().upper(),),
+        (normalise_code(batch_code),),
     )
     row = cursor.fetchone()
     return None if row is None else _to_json(row, today)
 
 
 def expiring_soon(conn, today):
-    return [b for b in list_batches(conn, today) if b["status"] == "expiring_soon"]
+    """Batches still on sale that expire within 30 days; a recalled batch is already off the shelf."""
+    return [b for b in list_batches(conn, today)
+            if b["status"] == "expiring_soon" and b["recalled_on"] is None]
+
+
+def parse_recall(body):
+    if not isinstance(body, dict):
+        raise ValidationError("request body must be a JSON object")
+    return _text(body, "reason", RECALL_REASON_MAX)
+
+
+def recall_batch(conn, batch_code, reason, today):
+    """Mark a batch as recalled today. Returns the batch, or None if there is no such batch."""
+    batch = get_batch(conn, batch_code, today)
+    if batch is None:
+        return None
+    if batch["recalled_on"] is not None:
+        raise ValidationError(f"batch {batch['batch_code']} was already recalled on {batch['recalled_on']}")
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE dbo.batches SET recalled_on = %s, recall_reason = %s WHERE batch_code = %s",
+        (today, reason, batch["batch_code"]),
+    )
+    conn.commit()
+    return get_batch(conn, batch_code, today)
 
 
 def seed_if_empty(conn, seed_path):
