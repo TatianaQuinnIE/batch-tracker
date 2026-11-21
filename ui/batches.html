@@ -54,6 +54,17 @@
       </form>
     </section>
 
+    <section class="card newbatch recall">
+      <h2>Recall a batch</h2>
+      <form id="recall-batch">
+        <label>Batch
+          <select name="batch_code" required><option value="">Choose a batch on the shelf…</option></select>
+        </label>
+        <label>Reason <input name="reason" placeholder="Mould found in one jar" maxlength="200" required></label>
+        <button>Recall batch</button>
+      </form>
+    </section>
+
     <section class="card ledger">
       <h2>On the shelf</h2>
       <div id="ledger"><p class="loading">Loading the ledger…</p></div>

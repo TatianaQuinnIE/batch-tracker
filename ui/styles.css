@@ -84,15 +84,15 @@ h2 { font-family: var(--serif); font-weight: 600; color: var(--forest); letter-s
 
 /* Forms */
 label, .field { display: grid; gap: 7px; font-size: 13px; font-weight: 600; color: var(--forest); min-width: 0; }
-input, textarea {
+input, textarea, select {
   font: inherit; font-size: 15px; font-weight: 400; color: var(--ink); width: 100%; min-width: 0;
   padding: 0 14px; border: 1.5px solid transparent; border-radius: 12px; background: #f4eee1;
   transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
 }
-input { height: 46px; }
+input, select { height: 46px; }
 textarea { padding: 12px 14px; line-height: 1.45; resize: vertical; min-height: 84px; }
 input::placeholder, textarea::placeholder { color: #a4a293; }
-input:focus, textarea:focus { outline: none; background: #fff; border-color: var(--forest-2); box-shadow: 0 0 0 4px rgba(44, 84, 64, 0.12); }
+input:focus, textarea:focus, select:focus { outline: none; background: #fff; border-color: var(--forest-2); box-shadow: 0 0 0 4px rgba(44, 84, 64, 0.12); }
 button {
   font: inherit; font-weight: 700; font-size: 15px; color: var(--cream); background: var(--forest);
   border: 0; border-radius: 999px; height: 46px; padding: 0 24px; cursor: pointer; white-space: nowrap;
@@ -112,6 +112,7 @@ button:active { transform: scale(0.97); }
 .pill.ok { background: var(--sage-soft); color: var(--forest-2); }
 .pill.expiring_soon { background: var(--saffron-soft); color: #8a5b00; }
 .pill.expired, .pill.flagged { background: var(--terra-soft); color: #9c3d1d; }
+.pill.recalled { background: #e7e2d6; color: var(--ink); }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .dim { color: var(--muted); }
 .empty { text-align: center; color: var(--muted); padding: 48px 16px; font-family: var(--serif); font-style: italic; font-size: 18px; }
@@ -172,6 +173,8 @@ button:active { transform: scale(0.97); }
   .newbatch h2 { font-size: 22px; margin: 0 0 14px; }
   .newbatch form { display: grid; grid-template-columns: 1fr 1.6fr 1fr 1fr 0.7fr auto; gap: 12px; align-items: end; }
   @media (max-width: 960px) { .newbatch form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .newbatch button { grid-column: 1 / -1; } }
+  .recall form { grid-template-columns: 1.2fr 2fr auto; }
+  @media (max-width: 960px) { .recall form { grid-template-columns: minmax(0, 1fr); } }
 
   .ledger { padding: 8px; }
   .ledger h2 { font-size: 22px; margin: 14px 16px 10px; }
@@ -187,6 +190,8 @@ button:active { transform: scale(0.97); }
     font-family: var(--serif); font-size: 22px; font-weight: 600; color: var(--forest); background: var(--sage-soft);
   }
   .row.expired .mono { background: var(--terra-soft); color: #9c3d1d; }
+  .row.recalled .mono { background: #e7e2d6; color: var(--muted); }
+  .row.recalled .what strong { color: var(--muted); }
   .row.expiring_soon .mono { background: var(--saffron-soft); color: #7a4f00; }
   .what strong { display: block; font-family: var(--serif); font-size: 19px; font-weight: 600; color: var(--forest); letter-spacing: -0.01em; line-height: 1.25; }
   .what small { display: flex; align-items: center; gap: 10px; margin-top: 5px; color: var(--muted); font-size: 13px; }
