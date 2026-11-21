@@ -118,6 +118,8 @@ def test_create_and_get_batch_round_trip(conn):
         "expires_on": "2027-01-01",
         "quantity": 10,
         "status": "ok",
+        "recalled_on": None,
+        "recall_reason": None,
     }
 
 
@@ -154,3 +156,82 @@ def test_seed_if_empty_loads_once(conn, tmp_path):
     assert service.seed_if_empty(conn, seed_file) == 1
     assert service.seed_if_empty(conn, seed_file) == 0
     assert len(service.list_batches(conn, TODAY)) == 1
+
+
+# --- recall (migration 002) --------------------------------------------------
+
+def test_recall_sets_today_and_reason(conn):
+    make(conn, "R-1", "2027-01-01")
+    batch = service.recall_batch(conn, "r-1", "Mould found in one jar", TODAY)
+    assert batch["recalled_on"] == "2026-10-11"
+    assert batch["recall_reason"] == "Mould found in one jar"
+    assert batch["status"] == "ok"  # status stays the expiry status; recall is separate
+
+
+def test_recall_twice_is_refused_and_keeps_the_first(conn):
+    make(conn, "R-1", "2027-01-01")
+    service.recall_batch(conn, "R-1", "first", TODAY)
+    with pytest.raises(service.ValidationError, match="already recalled on 2026-10-11"):
+        service.recall_batch(conn, "R-1", "second", date(2026, 10, 12))
+    assert service.get_batch(conn, "R-1", TODAY)["recall_reason"] == "first"
+
+
+def test_recall_unknown_batch_is_none(conn):
+    assert service.recall_batch(conn, "NOPE", "x", TODAY) is None
+
+
+@pytest.mark.parametrize("body", [None, [], {}, {"reason": "   "}, {"reason": "x" * 201}])
+def test_parse_recall_needs_a_short_reason(body):
+    with pytest.raises(service.ValidationError):
+        service.parse_recall(body)
+
+
+def test_recalled_batch_is_not_in_expiring_soon(conn):
+    make(conn, "SOON", "2026-10-20")
+    make(conn, "PULLED", "2026-10-21")
+    service.recall_batch(conn, "PULLED", "Leaking caps", TODAY)
+    assert [b["batch_code"] for b in service.expiring_soon(conn, TODAY)] == ["SOON"]
+
+
+def test_database_refuses_half_a_recall(conn):
+    """ck_batches_recall from 002: a date without a reason (or the reverse) cannot be stored."""
+    import pymssql
+
+    make(conn, "R-1", "2027-01-01")
+    with pytest.raises(pymssql.IntegrityError, match="ck_batches_recall"):
+        conn.cursor().execute("UPDATE dbo.batches SET recalled_on = '2026-10-11' WHERE batch_code = 'R-1'")
+    conn.rollback()
+
+
+# --- corrections and deletion ------------------------------------------------
+
+def test_parse_changes_checks_each_field_like_a_new_batch():
+    assert service.parse_changes({"product": " Rose soap ", "quantity": "7"}) == {
+        "product": "Rose soap", "quantity": 7}
+    for body in [None, {}, {"quantity": -1}, {"quantity": "many"}, {"expires_on": "soon"},
+                 {"product": ""}, {"produced_on": "2026-01-01"}]:
+        with pytest.raises(service.ValidationError):
+            service.parse_changes(body)
+
+
+def test_update_batch_changes_only_what_was_sent(conn):
+    make(conn, "U-1", "2027-01-01")
+    batch = service.update_batch(conn, "u-1", {"expires_on": date(2026, 10, 20)}, TODAY)
+    assert (batch["expires_on"], batch["status"], batch["quantity"]) == ("2026-10-20", "expiring_soon", 10)
+
+
+def test_update_batch_keeps_expiry_after_production(conn):
+    make(conn, "U-1", "2027-01-01", produced_on="2026-06-01")
+    with pytest.raises(service.ValidationError, match="after produced_on"):
+        service.update_batch(conn, "U-1", {"expires_on": date(2026, 6, 1)}, TODAY)
+
+
+def test_update_unknown_batch_is_none(conn):
+    assert service.update_batch(conn, "NOPE", {"quantity": 1}, TODAY) is None
+
+
+def test_delete_batch(conn):
+    make(conn, "D-1", "2027-01-01")
+    assert service.delete_batch(conn, " d-1 ") is True
+    assert service.delete_batch(conn, "D-1") is False
+    assert service.list_batches(conn, TODAY) == []

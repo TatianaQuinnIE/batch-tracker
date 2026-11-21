@@ -10,7 +10,8 @@ NEW_BATCH = {
 def test_health_reports_ok_with_version(client):
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.get_json() == {"status": "ok", "db": "ok", "version": "dev"}
+    assert response.get_json() == {"status": "ok", "db": "ok", "version": "dev",
+                                   "schema": "002_batch_recall.sql"}
 
 
 def test_health_is_503_when_database_is_unreachable(client):
@@ -95,3 +96,76 @@ def test_preflight_for_json_post_is_allowed(client):
     })
     assert response.status_code == 200
     assert "POST" in response.headers["Access-Control-Allow-Methods"]
+
+
+# --- recall, correct, delete --------------------------------------------------
+
+def test_recall_returns_the_recalled_batch(client):
+    response = client.post("/batches/lav-2607/recall", json={"reason": "Mould found in one jar"})
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["batch_code"] == "LAV-2607"
+    assert body["recall_reason"] == "Mould found in one jar"
+    assert body["recalled_on"] is not None
+
+
+def test_recall_without_reason_is_400(client):
+    response = client.post("/batches/LAV-2607/recall", json={})
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "reason is required"}
+
+
+def test_recall_twice_is_400(client):
+    client.post("/batches/LAV-2607/recall", json={"reason": "first"})
+    response = client.post("/batches/LAV-2607/recall", json={"reason": "second"})
+    assert response.status_code == 400
+    assert "already recalled" in response.get_json()["error"]
+
+
+def test_recall_unknown_batch_is_404(client):
+    response = client.post("/batches/nope/recall", json={"reason": "x"})
+    assert response.status_code == 404
+    assert response.get_json() == {"error": "batch NOPE not found"}
+
+
+def test_patch_changes_only_the_fields_sent(client):
+    response = client.patch("/batches/LAV-2607", json={"quantity": "30"})
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["quantity"] == 30
+    assert body["product"] == "Lavender soap bar"
+
+
+def test_patch_cannot_change_the_code(client):
+    response = client.patch("/batches/LAV-2607", json={"batch_code": "NEW", "quantity": 1})
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "error": "only product, expires_on and quantity can be changed, not batch_code"}
+    assert client.get("/batches/LAV-2607").get_json()["quantity"] == 120
+
+
+def test_patch_expiry_before_production_is_400(client):
+    response = client.patch("/batches/LAV-2607", json={"expires_on": "2026-06-30"})
+    assert response.status_code == 400
+    assert response.get_json() == {"error": "expires_on must be after produced_on"}
+
+
+def test_patch_unknown_batch_is_404(client):
+    assert client.patch("/batches/nope", json={"quantity": 1}).status_code == 404
+
+
+def test_delete_removes_the_batch(client):
+    response = client.delete("/batches/lav-2607")
+    assert response.status_code == 204
+    assert client.get("/batches/LAV-2607").status_code == 404
+    assert client.delete("/batches/LAV-2607").status_code == 404
+
+
+def test_preflight_allows_patch_and_delete(client):
+    response = client.options("/batches/LAV-2607", headers={
+        "Origin": "http://localhost:8080",
+        "Access-Control-Request-Method": "PATCH",
+        "Access-Control-Request-Headers": "Content-Type",
+    })
+    assert response.status_code == 200
+    assert {"PATCH", "DELETE"} <= set(response.headers["Access-Control-Allow-Methods"].split(", "))

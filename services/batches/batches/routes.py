@@ -29,9 +29,7 @@ def list_expiring_soon():
 def get_one(batch_code):
     with _connect() as conn:
         batch = service.get_batch(conn, batch_code, date.today())
-    if batch is None:
-        return jsonify(error=f"batch {batch_code.strip().upper()} not found"), 404
-    return jsonify(batch)
+    return _not_found(batch_code) if batch is None else jsonify(batch)
 
 
 @bp.post("")
@@ -43,3 +41,30 @@ def create():
         service.create_batch(conn, batch)
         created = service.get_batch(conn, batch["batch_code"], date.today())
     return jsonify(created), 201
+
+
+def _not_found(batch_code):
+    return jsonify(error=f"batch {service.normalise_code(batch_code)} not found"), 404
+
+
+@bp.post("/<batch_code>/recall")
+def recall(batch_code):
+    reason = service.parse_recall(request.get_json(silent=True))
+    with _connect() as conn:
+        batch = service.recall_batch(conn, batch_code, reason, date.today())
+    return _not_found(batch_code) if batch is None else jsonify(batch)
+
+
+@bp.patch("/<batch_code>")
+def update(batch_code):
+    changes = service.parse_changes(request.get_json(silent=True))
+    with _connect() as conn:
+        batch = service.update_batch(conn, batch_code, changes, date.today())
+    return _not_found(batch_code) if batch is None else jsonify(batch)
+
+
+@bp.delete("/<batch_code>")
+def delete(batch_code):
+    with _connect() as conn:
+        deleted = service.delete_batch(conn, batch_code)
+    return ("", 204) if deleted else _not_found(batch_code)

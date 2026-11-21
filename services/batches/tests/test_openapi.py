@@ -50,6 +50,21 @@ def test_create_matches(client):
     assert_matches(response.get_json(), "Batch")
 
 
+def test_recall_and_patch_match(client):
+    assert_matches({"reason": "Leaking caps"}, "Recall")
+    response = client.post("/batches/LAV-2607/recall", json={"reason": "Leaking caps"})
+    assert_matches(response.get_json(), "Batch")
+    assert_matches({"quantity": 30}, "BatchChanges")
+    assert_matches(client.patch("/batches/LAV-2607", json={"quantity": 30}).get_json(), "Batch")
+
+
+def test_a_batch_without_the_002_fields_is_still_valid():
+    """What a revision from before migration 002 answers during a rollout (ADR-10)."""
+    assert_matches({"batch_code": "LAV-2607", "product": "Lavender soap bar",
+                    "produced_on": "2026-07-01", "expires_on": "2027-07-01",
+                    "quantity": 120, "status": "ok"}, "Batch")
+
+
 @pytest.mark.parametrize("path", ["/batches/NOPE"])
 def test_errors_match(client, path):
     response = client.get(path)

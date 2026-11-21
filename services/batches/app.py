@@ -47,7 +47,7 @@ def create_app(database_url=None, connect_delays=db.STARTUP_RETRY_DELAYS_S):
         # Only the UI's origin may call this API from a browser.
         response.headers["Access-Control-Allow-Origin"] = app.config["ALLOWED_ORIGIN"]
         response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
         response.headers["Vary"] = "Origin"
         duration_ms = (time.perf_counter() - g.get("started", time.perf_counter())) * 1000
         log.info("%s %s %s %.1fms", request.method, request.path, response.status_code, duration_ms)
@@ -80,11 +80,14 @@ def create_app(database_url=None, connect_delays=db.STARTUP_RETRY_DELAYS_S):
                 cursor.execute("UPDATE dbo.health_check SET checked_at = SYSUTCDATETIME() WHERE id = 1")
                 cursor.execute("SELECT COUNT(*) AS n FROM dbo.batches")
                 cursor.fetchone()
+                # The last migration applied, so a deploy can be checked from outside.
+                cursor.execute("SELECT MAX(version) AS v FROM dbo.schema_migrations")
+                schema = cursor.fetchone()["v"]
                 conn.commit()
         except Exception as err:
             log.warning("health check failed: %s", str(err).splitlines()[0])
             return jsonify(status="error", db="unreachable", version=app.config["VERSION"]), 503
-        return jsonify(status="ok", db="ok", version=app.config["VERSION"])
+        return jsonify(status="ok", db="ok", version=app.config["VERSION"], schema=schema)
 
     return app
 
