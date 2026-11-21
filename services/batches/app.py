@@ -47,7 +47,7 @@ def create_app(database_url=None, connect_delays=db.STARTUP_RETRY_DELAYS_S):
         # Only the UI's origin may call this API from a browser.
         response.headers["Access-Control-Allow-Origin"] = app.config["ALLOWED_ORIGIN"]
         response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
         response.headers["Vary"] = "Origin"
         duration_ms = (time.perf_counter() - g.get("started", time.perf_counter())) * 1000
         log.info("%s %s %s %.1fms", request.method, request.path, response.status_code, duration_ms)

@@ -202,3 +202,36 @@ def test_database_refuses_half_a_recall(conn):
         conn.cursor().execute("UPDATE dbo.batches SET recalled_on = '2026-10-11' WHERE batch_code = 'R-1'")
     conn.rollback()
 
+
+# --- corrections and deletion ------------------------------------------------
+
+def test_parse_changes_checks_each_field_like_a_new_batch():
+    assert service.parse_changes({"product": " Rose soap ", "quantity": "7"}) == {
+        "product": "Rose soap", "quantity": 7}
+    for body in [None, {}, {"quantity": -1}, {"quantity": "many"}, {"expires_on": "soon"},
+                 {"product": ""}, {"produced_on": "2026-01-01"}]:
+        with pytest.raises(service.ValidationError):
+            service.parse_changes(body)
+
+
+def test_update_batch_changes_only_what_was_sent(conn):
+    make(conn, "U-1", "2027-01-01")
+    batch = service.update_batch(conn, "u-1", {"expires_on": date(2026, 10, 20)}, TODAY)
+    assert (batch["expires_on"], batch["status"], batch["quantity"]) == ("2026-10-20", "expiring_soon", 10)
+
+
+def test_update_batch_keeps_expiry_after_production(conn):
+    make(conn, "U-1", "2027-01-01", produced_on="2026-06-01")
+    with pytest.raises(service.ValidationError, match="after produced_on"):
+        service.update_batch(conn, "U-1", {"expires_on": date(2026, 6, 1)}, TODAY)
+
+
+def test_update_unknown_batch_is_none(conn):
+    assert service.update_batch(conn, "NOPE", {"quantity": 1}, TODAY) is None
+
+
+def test_delete_batch(conn):
+    make(conn, "D-1", "2027-01-01")
+    assert service.delete_batch(conn, " d-1 ") is True
+    assert service.delete_batch(conn, "D-1") is False
+    assert service.list_batches(conn, TODAY) == []

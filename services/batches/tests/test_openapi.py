@@ -50,10 +50,12 @@ def test_create_matches(client):
     assert_matches(response.get_json(), "Batch")
 
 
-def test_recall_matches(client):
+def test_recall_and_patch_match(client):
     assert_matches({"reason": "Leaking caps"}, "Recall")
     response = client.post("/batches/LAV-2607/recall", json={"reason": "Leaking caps"})
     assert_matches(response.get_json(), "Batch")
+    assert_matches({"quantity": 30}, "BatchChanges")
+    assert_matches(client.patch("/batches/LAV-2607", json={"quantity": 30}).get_json(), "Batch")
 
 
 def test_a_batch_without_the_002_fields_is_still_valid():

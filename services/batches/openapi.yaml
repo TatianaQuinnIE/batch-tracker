@@ -91,6 +91,49 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
               example: { error: "batch NOPE not found" }
         "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+    patch:
+      summary: Correct a batch's product, expiry date or units
+      description: |
+        Any subset of product, expires_on and quantity, each checked as when the batch was
+        created. batch_code cannot change (feedback stores it) and neither can produced_on.
+      operationId: updateBatch
+      parameters:
+        - name: batch_code
+          in: path
+          required: true
+          description: The code printed on the label, e.g. ROS-2608. Trimmed and upper-cased.
+          schema: { type: string, maxLength: 40 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BatchChanges" }
+      responses:
+        "200":
+          description: The batch after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Batch" }
+        "400": { $ref: "#/components/responses/BadInput" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
+    delete:
+      summary: Remove a batch registered by mistake
+      description: |
+        For a typo or a duplicate entry. A batch pulled from sale is recalled instead, so
+        it stays in the ledger. Feedback already sent for a deleted code is kept by the
+        feedback service and shown without batch details.
+      operationId: deleteBatch
+      parameters:
+        - name: batch_code
+          in: path
+          required: true
+          description: The code printed on the label, e.g. ROS-2608. Trimmed and upper-cased.
+          schema: { type: string, maxLength: 40 }
+      responses:
+        "204": { description: Deleted. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/DatabaseUnavailable" }
   /batches/{batch_code}/recall:
     post:
       summary: Recall a batch (pull it from sale today, with a reason)
@@ -187,6 +230,18 @@ components:
           type: [string, "null"]
           maxLength: 200
           description: Why it was recalled, or null. Added by migration 002.
+    BatchChanges:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        product: { type: string, minLength: 1, maxLength: 120 }
+        expires_on: { type: string, format: date, description: Must be after the batch's produced_on. }
+        quantity:
+          oneOf:
+            - { type: integer, minimum: 0 }
+            - { type: string, pattern: "^\\s*\\d+\\s*$" }
+      example: { quantity: 30 }
     Recall:
       type: object
       required: [reason]

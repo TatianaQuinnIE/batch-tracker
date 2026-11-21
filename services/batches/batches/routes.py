@@ -54,3 +54,17 @@ def recall(batch_code):
         batch = service.recall_batch(conn, batch_code, reason, date.today())
     return _not_found(batch_code) if batch is None else jsonify(batch)
 
+
+@bp.patch("/<batch_code>")
+def update(batch_code):
+    changes = service.parse_changes(request.get_json(silent=True))
+    with _connect() as conn:
+        batch = service.update_batch(conn, batch_code, changes, date.today())
+    return _not_found(batch_code) if batch is None else jsonify(batch)
+
+
+@bp.delete("/<batch_code>")
+def delete(batch_code):
+    with _connect() as conn:
+        deleted = service.delete_batch(conn, batch_code)
+    return ("", 204) if deleted else _not_found(batch_code)

@@ -13,6 +13,9 @@ BATCH_CODE_FORMAT = re.compile(r"^[A-Z0-9][A-Z0-9-]*$")
 
 NEW_BATCH_COLUMNS = "batch_code, product, produced_on, expires_on, quantity"
 COLUMNS = NEW_BATCH_COLUMNS + ", recalled_on, recall_reason"
+# The only fields PATCH may change. batch_code is the key feedback stores (ADR-6), so it
+# never changes; produced_on is a fact about the past.
+EDITABLE = ("product", "expires_on", "quantity")
 
 
 class ValidationError(ValueError):
@@ -153,6 +156,55 @@ def recall_batch(conn, batch_code, reason, today):
     )
     conn.commit()
     return get_batch(conn, batch_code, today)
+
+
+def parse_changes(body):
+    """Validate a PATCH body: one or more of EDITABLE, each checked like a new batch."""
+    if not isinstance(body, dict):
+        raise ValidationError("request body must be a JSON object")
+    unknown = sorted(set(body) - set(EDITABLE))
+    if unknown:
+        raise ValidationError(
+            f"only product, expires_on and quantity can be changed, not {', '.join(unknown)}")
+    if not body:
+        raise ValidationError("send at least one of product, expires_on, quantity")
+    changes = {}
+    if "product" in body:
+        changes["product"] = _text(body, "product", PRODUCT_MAX)
+    if "expires_on" in body:
+        changes["expires_on"] = _date(body, "expires_on")
+    if "quantity" in body:
+        changes["quantity"] = _whole_number(body, "quantity")
+        if changes["quantity"] < 0:
+            raise ValidationError("quantity cannot be negative")
+    return changes
+
+
+def update_batch(conn, batch_code, changes, today):
+    """Apply changes from parse_changes. Returns the batch, or None if there is no such batch."""
+    batch = get_batch(conn, batch_code, today)
+    if batch is None:
+        return None
+    if "expires_on" in changes and changes["expires_on"] <= date.fromisoformat(batch["produced_on"]):
+        raise ValidationError("expires_on must be after produced_on")
+    # Column names come from EDITABLE (via parse_changes), never from the request.
+    assignments = ", ".join(f"{column} = %s" for column in changes)
+    cursor = conn.cursor()
+    cursor.execute(
+        f"UPDATE dbo.batches SET {assignments} WHERE batch_code = %s",
+        (*changes.values(), batch["batch_code"]),
+    )
+    conn.commit()
+    return get_batch(conn, batch_code, today)
+
+
+def delete_batch(conn, batch_code):
+    """For a batch registered by mistake. Returns False if there was no such batch."""
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM dbo.batches WHERE batch_code = %s", (normalise_code(batch_code),))
+    deleted = cursor.rowcount
+    conn.commit()
+    return deleted == 1
 
 
 def seed_if_empty(conn, seed_path):
