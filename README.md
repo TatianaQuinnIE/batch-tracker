@@ -287,7 +287,7 @@ Batches API, added in Assignment 2 with migration 002 (full list in `services/ba
 
 ## Migration 002 on Azure (evidence)
 
-`002_batch_recall.sql` adds `recalled_on` and `recall_reason` to `dbo.batches` (ADR-10). It was deployed through the pipeline to a database that already had data, and applied by the batches service on startup like 001.
+`002_batch_recall.sql` adds `recalled_on` and `recall_reason` to `dbo.batches` (ADR-7). It was deployed through the pipeline to a database that already had data, and applied by the batches service on startup like 001.
 
 **Before the deploy** (2026-11-21, revision on commit 6d2458a, schema 001 only):
 

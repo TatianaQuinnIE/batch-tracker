@@ -59,7 +59,7 @@ def test_recall_and_patch_match(client):
 
 
 def test_a_batch_without_the_002_fields_is_still_valid():
-    """What a revision from before migration 002 answers during a rollout (ADR-10)."""
+    """What a revision from before migration 002 answers during a rollout (ADR-7)."""
     assert_matches({"batch_code": "LAV-2607", "product": "Lavender soap bar",
                     "produced_on": "2026-07-01", "expires_on": "2027-07-01",
                     "quantity": 120, "status": "ok"}, "Batch")

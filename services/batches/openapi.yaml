@@ -208,7 +208,7 @@ components:
     Batch:
       type: object
       # recalled_on and recall_reason are not required: a revision from before
-      # migration 002 answers without them while a deploy rolls out (ADR-10), so a
+      # migration 002 answers without them while a deploy rolls out (ADR-7), so a
       # consumer such as feedback must not depend on them being there.
       required: [batch_code, product, produced_on, expires_on, quantity, status]
       additionalProperties: false
