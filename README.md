@@ -1,49 +1,157 @@
 # Batch Tracker
 
-> **Assignment 2 (in progress).** The monolith is split into two services, `services/batches/` and `services/feedback/`, each with its own Dockerfile, dependencies, migrations, tests and SQL Server database. The UI becomes static files in `ui/`. The sections after this box still describe the Assignment 1 monolith and will be rewritten.
->
-> **Run everything** (needs Docker Desktop; on Apple Silicon turn on *Use Rosetta for x86/amd64 emulation*, because SQL Server has no arm64 image):
->
-> ```bash
-> docker compose up --build
-> ```
->
-> UI on http://localhost:8080, batches API on http://localhost:8001, feedback API on http://localhost:8002 (`GET /health` on each). Compose starts SQL Server, runs `db/init.sql` once (one database and one login per service), then both services, which apply their migrations on startup. Data lives in the `mssql-data` volume, so `docker compose down` keeps it and `docker compose down -v` deletes it.
->
-> **Run one service on its own** (SQL Server from compose, the service with Python 3.12):
->
-> ```bash
-> docker compose up -d db db-init
-> cd services/batches
-> python3.12 -m venv .venv && source .venv/bin/activate
-> pip install -r requirements.txt
-> DATABASE_URL='mssql://batches_app:LocalOnly-Batches-2026@localhost:1433/batches' PORT=8001 python app.py
-> ```
->
-> **Tests, lint and coverage** (per service, against the SQL Server from compose; the tests create and migrate their own `batches_test` / `feedback_test` database):
->
-> ```bash
-> docker compose up -d db
-> cd services/batches            # or services/feedback
-> pip install -r requirements-dev.txt
-> ruff check --config ../../ruff.toml .
-> TEST_DATABASE_URL='mssql://sa:LocalOnly-Sa-2026@localhost:1433/master' \
->   pytest --cov=batches --cov=migrate --cov=db --cov-report=term-missing --cov-fail-under=70
-> ```
->
-> Result on 2026-11-19: batches 58 passed, 99% coverage; feedback 69 passed, 98% coverage. Feedback's tests replace the batches service with a stub HTTP server (`tests/stub_batches.py`) that can be made slow, broken or stopped.
->
-> **Cross-seam integration test** (against the real compose stack; it stops and restarts the batches container):
->
-> ```bash
-> docker compose up -d --build
-> pip install pytest==8.3.4
-> pytest -v tests/integration
-> ```
->
-> **The cross-seam flow and partial failure.** The feedback page (http://localhost:8080/feedback.html) shows each batch's product and expiry next to its reaction rate; feedback fetches them from batches over HTTP with a 2 s timeout (`BATCHES_TIMEOUT_S`). Try `docker compose stop batches` and reload: feedback still lists every report, with the notice *"Batch details are unavailable right now"*, and the batches page says the service is starting up and retries. `docker compose start batches` brings the details back.
->
-> **API description:** `services/batches/openapi.yaml` and `services/feedback/openapi.yaml` (OpenAPI 3.1, validated in CI and checked against the real routes by the tests).
+A small system for a natural cosmetics workshop. Staff register each production **batch** (product, batch code, dates, units), see what is expired or expiring within 30 days, correct a batch, and recall it from sale. Customers use the batch code printed on their label to report **feedback**, including whether they had a skin reaction. A batch is flagged when it has at least 3 reports and more than 10% of them mention a reaction.
+
+Assignment 1 was one Flask app with one SQLite file. In Assignment 2 it is split along the seam it already had (ADR-2, ADR-6) into two services, each with its own SQL Server database, its own migrations and its own container, plus a static UI, deployed to Azure by the pipeline.
+
+## Live on Azure
+
+| Part | URL |
+|---|---|
+| UI (Storage static website) | https://tquinnieu2024ui.z28.web.core.windows.net |
+| Batches API (Container App) | https://tquinn-ieu2024-batches.lemonsand-06d134dc.francecentral.azurecontainerapps.io |
+| Feedback API (Container App) | https://tquinn-ieu2024-feedback.lemonsand-06d134dc.francecentral.azurecontainerapps.io |
+
+Both apps scale to zero, and the databases pause after an hour idle, so the first request after a quiet period can take 30 s to a minute (the UI shows "starting up" and retries; ADR-8). `GET /health` on each API answers with the commit it runs as `version`.
+
+## Architecture
+
+```
+                 browser
+                    │  static files (HTML, JS, config.js with the two API URLs)
+                    ▼
+     Storage static website  ── ui/ ──
+                    │  fetch() from the browser, CORS allows only the UI origin
+          ┌─────────┴──────────┐
+          ▼                    ▼
+   batches service      feedback service ──── GET /batches, GET /batches/{code}
+   (Container App)      (Container App)       2 s timeout, degrades if no answer
+          │                    │                         (to batches)
+          ▼                    ▼
+   batches database     feedback database      Azure SQL serverless, one database
+   (batches_app user)   (feedback_app user)    and one contained user per service
+```
+
+Images are built by CI, tagged with the commit SHA and pushed to GHCR; CD on `main` points each Container App at that SHA. The same picture is described for machines in `system.yaml` (validated in CI against `system.schema.json` and the code).
+
+| Service | Folder | Owns | Main logic |
+|---|---|---|---|
+| Batches | `services/batches/` | `dbo.batches` in its own database | create, correct (PATCH), delete and recall a batch; expiry status (`expired` / `expiring_soon` / `ok`); seed loading |
+| Feedback | `services/feedback/` | `dbo.feedback` in its own database | submit a report, reaction rate per batch, flagging rule; batch details fetched from batches over HTTP |
+
+The only link between the services is the `batch_code` text and feedback's HTTP calls to batches. There is no foreign key across the seam (ADR-3, ADR-7).
+
+## Project structure
+
+```
+services/batches/      app.py (create_app, /health, request log, CORS), db.py, migrate.py,
+                       batches/ (service.py logic, routes.py Blueprint), migrations/001_init.sql,
+                       migrations/002_batch_recall.sql, seed.json, openapi.yaml, tests/, Dockerfile
+services/feedback/     same layout; feedback/batches_client.py is the call to batches;
+                       tests/stub_batches.py stands in for batches in the unit tests
+ui/                    static pages (index, batches, feedback), app.js, config.js (written by CD)
+db/init.sql            local only: one database and one login per service for compose
+docker-compose.yml     SQL Server, db-init, both services and the UI on nginx
+tests/integration/     cross-seam test against the real compose stack
+tests/test_system_description.py   system.yaml against the schema and the code
+system.yaml, system.schema.json    the system description and the course schema
+.github/workflows/     ci.yml (every push and PR) and cd.yml (main only: CI, then deploy)
+ADR.md, AI_USAGE.md    decision records 1-10 and the AI usage log
+```
+
+## Configuration
+
+Each service reads environment variables only; nothing secret is in the repository.
+
+| Variable | Service | Default | What it does |
+|---|---|---|---|
+| `DATABASE_URL` | both | none (required) | `mssql://user:password@host:1433/database`; on Azure a Container Apps secret set by CD |
+| `PORT` | both | `8000` | Port the server listens on |
+| `ALLOWED_ORIGIN` | both | `http://localhost:8080` | The only origin allowed by CORS (the UI) |
+| `GIT_SHA` | both | `dev` | Returned as `version` by `/health`; CD sets it to the deployed commit |
+| `BATCHES_URL` | feedback | `http://localhost:8001` | Where feedback finds the batches service |
+| `BATCHES_TIMEOUT_S` | feedback | `2` | How long feedback waits for batches before degrading |
+| `REACTION_ALERT_RATE` | feedback | `0.10` | Reaction rate above which a batch is flagged (with 3+ reports) |
+
+## Run everything with Docker
+
+Needs Docker Desktop; on Apple Silicon turn on *Use Rosetta for x86/amd64 emulation*, because SQL Server has no arm64 image.
+
+```bash
+git clone https://github.com/TatianaQuinnIE/batch-tracker.git
+cd batch-tracker
+docker compose up --build
+```
+
+UI on http://localhost:8080, batches API on http://localhost:8001, feedback API on http://localhost:8002 (`GET /health` on each). Compose starts SQL Server, runs `db/init.sql` once (one database and one login per service), then both services, which apply their migrations on startup. Data lives in the `mssql-data` volume, so `docker compose down` keeps it and `docker compose down -v` deletes it.
+
+**Run one service on its own** (SQL Server from compose, the service with Python 3.12):
+
+```bash
+docker compose up -d db db-init
+cd services/batches
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+DATABASE_URL='mssql://batches_app:LocalOnly-Batches-2026@localhost:1433/batches' PORT=8001 python app.py
+```
+
+(The local passwords are for the compose database only, which listens on 127.0.0.1; Azure uses generated passwords kept in GitHub secrets.)
+
+## The cross-seam flow and partial failure
+
+The feedback page (http://localhost:8080/feedback.html) shows each batch's product and expiry next to its reaction rate. Feedback fetches them from batches over HTTP with a 2 s timeout (`GET /batches` for lists, `GET /batches/{code}` for one batch) and joins them in code by `batch_code`. If batches does not answer in time, feedback still returns every report, rate and flag from its own database, with `batch: null`, `batches_service: "unavailable"` and the notice *"Batch details are unavailable right now"*, and logs a warning. Try `docker compose stop batches` and reload; `docker compose start batches` brings the details back. ADR-6 explains the choice, ADR-10 what I deliberately did not build on top of it.
+
+## Pages and endpoints
+
+The full contracts are `services/batches/openapi.yaml` and `services/feedback/openapi.yaml` (OpenAPI 3.1, validated in CI and checked against the real routes by the tests).
+
+| Method | Path | Does |
+|---|---|---|
+| GET | `/batches` | All batches with their expiry status (and recall fields after migration 002) |
+| GET | `/batches/expiring-soon` | Batches expiring within 30 days |
+| GET | `/batches/<batch_code>` | One batch (404 if unknown) |
+| POST | `/batches` | Registers a batch (validated; 400 with a message if a field is wrong or the code already exists) |
+| PATCH | `/batches/<batch_code>` | Corrects `product`, `expires_on` and/or `quantity`; `batch_code` never changes |
+| POST | `/batches/<batch_code>/recall` | Recalls a batch today with `{"reason": ...}`; once per batch |
+| DELETE | `/batches/<batch_code>` | Removes a batch registered by mistake (204) |
+| GET | `/feedback` | Per-batch summaries (reports, reactions, rate, flag) with batch details from batches |
+| GET | `/feedback/flagged` | Only the flagged batches |
+| GET | `/feedback/<batch_code>` | Summary for one batch (404 if no feedback) |
+| POST | `/feedback` | Submits a report (the code does not have to be registered yet, ADR-3) |
+| GET | `/health` | Both services: `status`, `db`, `version` (commit SHA); batches also `schema` (last migration applied). 503 if the database is unreachable |
+
+UI pages: `index.html` (home), `batches.html` (list, register, recall), `feedback.html` (customer form and workshop view).
+
+**Logs.** Every request is logged by each service as one line, `METHOD path status duration_ms`, plus migrations applied, seeding, database retries and the feedback → batches degradations. On Azure: `az containerapp logs show --name tquinn-ieu2024-feedback --resource-group rg-tquinn-ieu2024 --follow`.
+
+## Tests, lint and coverage
+
+Per service, against the SQL Server from compose; the tests create and migrate their own `batches_test` / `feedback_test` database:
+
+```bash
+docker compose up -d db
+cd services/batches            # or services/feedback
+pip install -r requirements-dev.txt
+ruff check --config ../../ruff.toml .
+TEST_DATABASE_URL='mssql://sa:LocalOnly-Sa-2026@localhost:1433/master' \
+  pytest --cov=batches --cov=migrate --cov=db --cov-report=term-missing --cov-fail-under=70
+```
+
+Feedback's unit tests replace batches with a stub HTTP server (`tests/stub_batches.py`) that can be made slow, broken or stopped. The cross-seam integration test runs against the real compose stack and stops and restarts the batches container:
+
+```bash
+docker compose up -d --build
+pip install pytest==8.3.4
+pytest -v tests/integration
+```
+
+Results in CI on 2026-11-21 (CD run on e000feb): batches 87 passed, 99.6% coverage; feedback 69 passed, 98.1% coverage; system description 12 passed; integration 2 passed. What is deliberately not tested (the UI's JavaScript, Azure-only behaviour) is in ADR-9.
+
+## CI/CD
+
+- **CI** (`.github/workflows/ci.yml`, every push to a branch and every pull request): `test` per service (ruff, then pytest against a throwaway SQL Server with a random password, failing under 70% coverage), `describe` (system.yaml and both OpenAPI files), `integration` (the compose stack and the cross-seam test) and `images` (both images built on every run; pushed to GHCR tagged with the commit SHA only when CD calls CI on `main`). It never touches Azure (ADR-9).
+- **CD** (`.github/workflows/cd.yml`, only on `main`, so only after a merged pull request): runs the whole CI on the same commit, signs in to Azure with OIDC as a managed identity (no Azure password in GitHub), sets each app's database secret, deploys the SHA-tagged images as a new revision, writes `ui/config.js`, uploads `ui/` to the static website, and waits for both `/health` endpoints to answer 200 with the deployed commit as `version`, failing the run otherwise (ADR-8).
+
 
 ## Azure: initial setup (run once, by hand)
 
@@ -202,89 +310,6 @@ done
 
 From here, every merge to `main` runs CD (`.github/workflows/cd.yml`): the whole CI, then the deploy of that commit, then a health check that `/health` on both services answers 200 with the deployed commit as `version`. Logs: `az containerapp logs show --name tquinn-ieu2024-feedback --resource-group rg-tquinn-ieu2024 --follow` (add `--type system` for start-up and probe events).
 
-A small web app for a natural cosmetics workshop. Staff register each production **batch** (product, batch code, dates, units) and see what is expired or expiring within 30 days. Customers use the batch code printed on their label to report **feedback**, including whether they had a skin reaction. A batch is flagged when it has at least 3 reports and more than 10% of them mention a reaction.
-
-The app is one Flask process with one SQLite file. It has two feature domains that only share the `batch_code` text, so they can be split into separate services in Assignment 2.
-
-## Feature domains
-
-| Domain | Package | Owns | Main logic |
-|---|---|---|---|
-| Batches | `batches/` | `batches` table | create batch with validation, expiry status (`expired` / `expiring_soon` / `ok`), seed loading |
-| Feedback | `feedback/` | `feedback` table | submit report, reaction rate per batch, flagging rule |
-
-`feedback/` never imports from `batches/` and never queries the `batches` table. `app.py` is the only place that knows about both: it creates the schema for each domain and registers both Blueprints. That is where the split would happen.
-
-## Project structure
-
-```
-app.py               entry point: create_app(), reads PORT and DATA_DIR
-db.py                opens the SQLite connection
-seed.json            starter batches, loaded only when the table is empty
-batches/             service.py (logic), routes.py (Blueprint), templates/
-feedback/            service.py (logic), routes.py (Blueprint), templates/
-templates/           base.html, index.html (shared layout)
-tests/               unit tests (services) and route tests
-Dockerfile           course template with the four TODOs filled in
-ADR.md               architecture decision records
-AI_USAGE.md          AI usage log
-```
-
-## Configuration
-
-Everything is configured with environment variables. None are required.
-
-| Variable | Default | What it does |
-|---|---|---|
-| `PORT` | `8000` | Port the server listens on (always on `0.0.0.0`) |
-| `DATA_DIR` | `./data` (the Dockerfile sets `/data`) | Folder for the SQLite file; created on first start |
-| `REACTION_ALERT_RATE` | `0.10` | Reaction rate above which a batch is flagged (with 3+ reports) |
-
-**SQLite path:** `$DATA_DIR/tracker.db`. The schema is created on first start with `CREATE TABLE IF NOT EXISTS`, and `seed.json` is loaded only when the `batches` table is empty, so restarting never duplicates or deletes data.
-
-## Run it on your machine
-
-Requires Python 3.12 or newer.
-
-```bash
-git clone https://github.com/TatianaQuinnIE/batch-tracker.git
-cd batch-tracker
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python app.py
-```
-
-Open http://localhost:8000. To use another port or data folder: `PORT=9000 DATA_DIR=/tmp/bt python app.py`.
-
-## Run it with Docker
-
-```bash
-docker build -t batch-tracker .
-docker run -p 8000:8000 -v batch-tracker-data:/data batch-tracker
-```
-
-Open http://localhost:8000. The named volume keeps the database when the container is removed. Another port: `docker run -e PORT=9000 -p 9000:9000 -v batch-tracker-data:/data batch-tracker`.
-
-## Pages and endpoints
-
-| Method | Path | Returns |
-|---|---|---|
-| GET | `/` | Home page |
-| GET / POST | `/batches/` | Batch list and "register a batch" form |
-| GET | `/batches/expiring-soon` | JSON list of batches expiring within 30 days |
-| GET / POST | `/feedback/` | Customer feedback form and the workshop view |
-| GET | `/feedback/flagged` | JSON list of flagged batches |
-| GET | `/feedback/<batch_code>` | JSON summary for one batch (404 if no feedback) |
-
-Batches API, added in Assignment 2 with migration 002 (full list in `services/batches/openapi.yaml`):
-
-| Method | Path | Does |
-|---|---|---|
-| POST | `/batches/<batch_code>/recall` | Recalls a batch today with `{"reason": ...}`; once per batch |
-| PATCH | `/batches/<batch_code>` | Corrects `product`, `expires_on` and/or `quantity` |
-| DELETE | `/batches/<batch_code>` | Removes a batch registered by mistake (204) |
-
 ## Migration 002 on Azure (evidence)
 
 `002_batch_recall.sql` adds `recalled_on` and `recall_reason` to `dbo.batches` (ADR-7). It was deployed through the pipeline to a database that already had data, and applied by the batches service on startup like 001.
@@ -323,59 +348,4 @@ The batches log on Azure shows the migration applied once, about 0.1 s, on the f
 $ az containerapp logs show --name tquinn-ieu2024-batches --resource-group rg-tquinn-ieu2024 --tail 300 --format text | grep migration
 2026-11-21 13:11:11,697 INFO migrate applying migration 002_batch_recall.sql
 2026-11-21 13:11:11,800 INFO migrate applied migration 002_batch_recall.sql
-```
-
-## Tests and coverage
-
-```bash
-pytest --cov=batches --cov=feedback --cov-report=term-missing
-```
-
-Result on 2026-10-12: **31 passed, 100% coverage** of the `batches` and `feedback` packages.
-
-```
-Name                   Stmts   Miss  Cover   Missing
-----------------------------------------------------
-batches/__init__.py        0      0   100%
-batches/routes.py         27      0   100%
-batches/service.py        44      0   100%
-feedback/__init__.py       0      0   100%
-feedback/routes.py        34      0   100%
-feedback/service.py       40      0   100%
-----------------------------------------------------
-TOTAL                    145      0   100%
-```
-
-See ADR-4 in `ADR.md` for what the tests focus on and what they leave out.
-
-## Container contract check (§7)
-
-Output of the course checker `container/run.sh` against this repository on 2026-10-12:
-
-```
-=== SDD Assignment 1 contract check ===
-Repository: /Users/tatianaquinn/Desktop/batch-tracker
-
-==> Repository shape
-  PASS  one Dockerfile, one manifest (requirements.txt)
-
-==> Build from a clean context, no build args
-  PASS  image built
-  PASS  image size 50 MB
-
-==> Start on PORT=8000 and reach it from the host
-  PASS  HTTP 200 from http://localhost:8000/
-
-==> SQLite file under DATA_DIR
-  PASS  found in /data: tracker.db 
-
-==> Data persists, and a second boot does not re-seed
-  PASS  volume at /data persists
-  PASS  row counts unchanged across restart: batches=4 feedback=0 
-
-==> PORT override is honoured (not hardcoded)
-  PASS  HTTP 200 from http://localhost:9123/
-
-=== ALL CHECKS PASSED ===
-Paste this output into your README as the §7 evidence.
 ```
